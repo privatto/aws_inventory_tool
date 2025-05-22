@@ -485,13 +485,16 @@ def get_backup_vaults():
         logging.error(f"Error retrieving AWS Backup vaults: {e}")
     return vaults
 
-def save_inventory_to_csv(inventory, filename):
+def save_inventory_to_csv(inventory, filename, account_id=None):
     """
     Salva uma lista de dicionários em um arquivo CSV.
+    O nome do arquivo inclui o account_id se fornecido.
     """
     if not inventory:
         logging.warning(f"Nenhum dado para salvar em {filename}.")
         return
+    if account_id:
+        filename = f"{account_id}_{filename}"
     try:
         with open(filename, mode='w', newline='', encoding='utf-8') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=inventory[0].keys())
@@ -510,115 +513,119 @@ def print_inventory(inventory, title):
             logging.info(item)
 
 def main():
+    # Obter account_id uma vez para uso nos nomes dos arquivos
+    sts = boto3.client('sts')
+    account_id = sts.get_caller_identity()["Account"]
+
     logging.info("Getting EC2 instances inventory...")
     ec2_inventory = get_ec2_inventory()
     print_inventory(ec2_inventory, "EC2 Instances Inventory")
-    save_inventory_to_csv(ec2_inventory, "ec2_inventory.csv")
+    save_inventory_to_csv(ec2_inventory, "ec2_inventory.csv", account_id)
 
     logging.info("Getting RDS instances inventory...")
     rds_inventory = get_rds_inventory()
     print_inventory(rds_inventory, "RDS Instances Inventory")
-    save_inventory_to_csv(rds_inventory, "rds_inventory.csv")
+    save_inventory_to_csv(rds_inventory, "rds_inventory.csv", account_id)
 
     logging.info("Getting S3 buckets inventory...")
     s3_inventory = get_s3_inventory()
     print_inventory(s3_inventory, "S3 Buckets Inventory")
-    save_inventory_to_csv(s3_inventory, "s3_inventory.csv")
+    save_inventory_to_csv(s3_inventory, "s3_inventory.csv", account_id)
 
     logging.info("Getting Lambda functions inventory...")
     lambda_inventory = get_lambda_inventory()
     print_inventory(lambda_inventory, "Lambda Functions Inventory")
-    save_inventory_to_csv(lambda_inventory, "lambda_inventory.csv")
+    save_inventory_to_csv(lambda_inventory, "lambda_inventory.csv", account_id)
 
     logging.info("Getting EKS clusters inventory...")
     eks_inventory = get_eks_inventory()
     print_inventory(eks_inventory, "EKS Clusters Inventory")
-    save_inventory_to_csv(eks_inventory, "eks_inventory.csv")
+    save_inventory_to_csv(eks_inventory, "eks_inventory.csv", account_id)
 
     logging.info("Getting Spot Instance Requests inventory...")
     spot_inventory = get_spot_instance_requests()
     print_inventory(spot_inventory, "Spot Instance Requests Inventory")
-    save_inventory_to_csv(spot_inventory, "spot_inventory.csv")
+    save_inventory_to_csv(spot_inventory, "spot_inventory.csv", account_id)
 
     logging.info("Getting IAM users inventory...")
     iam_users_inventory = get_iam_users()
     print_inventory(iam_users_inventory, "IAM Users Inventory")
-    save_inventory_to_csv(iam_users_inventory, "iam_users_inventory.csv")
+    save_inventory_to_csv(iam_users_inventory, "iam_users_inventory.csv", account_id)
 
     logging.info("Getting IAM roles inventory...")
     iam_roles_inventory = get_iam_roles()
     print_inventory(iam_roles_inventory, "IAM Roles Inventory")
-    save_inventory_to_csv(iam_roles_inventory, "iam_roles_inventory.csv")
+    save_inventory_to_csv(iam_roles_inventory, "iam_roles_inventory.csv", account_id)
 
     logging.info("Getting CloudFront distributions inventory...")
     cloudfront_inventory = get_cloudfront_distributions()
     print_inventory(cloudfront_inventory, "CloudFront Distributions Inventory")
-    save_inventory_to_csv(cloudfront_inventory, "cloudfront_inventory.csv")
+    save_inventory_to_csv(cloudfront_inventory, "cloudfront_inventory.csv", account_id)
 
     logging.info("Getting DynamoDB tables inventory...")
     dynamodb_inventory = get_dynamodb_tables()
     print_inventory(dynamodb_inventory, "DynamoDB Tables Inventory")
-    save_inventory_to_csv(dynamodb_inventory, "dynamodb_inventory.csv")
+    save_inventory_to_csv(dynamodb_inventory, "dynamodb_inventory.csv", account_id)
 
     logging.info("Getting ELBv2 load balancers inventory...")
     elbv2_inventory = get_elbv2_load_balancers()
     print_inventory(elbv2_inventory, "ELBv2 Load Balancers Inventory")
-    save_inventory_to_csv(elbv2_inventory, "elbv2_inventory.csv")
+    save_inventory_to_csv(elbv2_inventory, "elbv2_inventory.csv", account_id)
 
     logging.info("Getting SNS topics inventory...")
     sns_inventory = get_sns_topics()
     print_inventory(sns_inventory, "SNS Topics Inventory")
-    save_inventory_to_csv(sns_inventory, "sns_inventory.csv")
+    save_inventory_to_csv(sns_inventory, "sns_inventory.csv", account_id)
 
     logging.info("Getting SQS queues inventory...")
     sqs_inventory = get_sqs_queues()
     print_inventory(sqs_inventory, "SQS Queues Inventory")
-    save_inventory_to_csv(sqs_inventory, "sqs_inventory.csv")
+    save_inventory_to_csv(sqs_inventory, "sqs_inventory.csv", account_id)
 
     logging.info("Getting CloudFormation stacks inventory...")
     cloudformation_inventory = get_cloudformation_stacks()
     print_inventory(cloudformation_inventory, "CloudFormation Stacks Inventory")
-    save_inventory_to_csv(cloudformation_inventory, "cloudformation_inventory.csv")
+    save_inventory_to_csv(cloudformation_inventory, "cloudformation_inventory.csv", account_id)
 
     logging.info("Getting ECR repositories inventory...")
     ecr_inventory = get_ecr_repositories()
     print_inventory(ecr_inventory, "ECR Repositories Inventory")
-    save_inventory_to_csv(ecr_inventory, "ecr_inventory.csv")
+    save_inventory_to_csv(ecr_inventory, "ecr_inventory.csv", account_id)
 
     logging.info("Getting DocumentDB clusters inventory...")
     docdb_inventory = get_docdb_clusters()
     print_inventory(docdb_inventory, "DocumentDB Clusters Inventory")
-    save_inventory_to_csv(docdb_inventory, "docdb_inventory.csv")
+    save_inventory_to_csv(docdb_inventory, "docdb_inventory.csv", account_id)
 
     logging.info("Getting Redshift clusters inventory...")
     redshift_inventory = get_redshift_clusters()
     print_inventory(redshift_inventory, "Redshift Clusters Inventory")
-    save_inventory_to_csv(redshift_inventory, "redshift_inventory.csv")
+    save_inventory_to_csv(redshift_inventory, "redshift_inventory.csv", account_id)
 
     logging.info("Getting ElastiCache clusters inventory...")
     elasticache_inventory = get_elasticache_clusters()
     print_inventory(elasticache_inventory, "ElastiCache Clusters Inventory")
-    save_inventory_to_csv(elasticache_inventory, "elasticache_inventory.csv")
+    save_inventory_to_csv(elasticache_inventory, "elasticache_inventory.csv", account_id)
 
     logging.info("Getting EFS file systems inventory...")
     efs_inventory = get_efs_file_systems()
     print_inventory(efs_inventory, "EFS File Systems Inventory")
-    save_inventory_to_csv(efs_inventory, "efs_inventory.csv")
+    save_inventory_to_csv(efs_inventory, "efs_inventory.csv", account_id)
 
     logging.info("Getting FSx file systems inventory...")
     fsx_inventory = get_fsx_file_systems()
     print_inventory(fsx_inventory, "FSx File Systems Inventory")
-    save_inventory_to_csv(fsx_inventory, "fsx_inventory.csv")
+    save_inventory_to_csv(fsx_inventory, "fsx_inventory.csv", account_id)
 
     logging.info("Getting Glacier vaults inventory...")
     glacier_inventory = get_glacier_vaults()
     print_inventory(glacier_inventory, "Glacier Vaults Inventory")
-    save_inventory_to_csv(glacier_inventory, "glacier_inventory.csv")
+    save_inventory_to_csv(glacier_inventory, "glacier_inventory.csv", account_id)
 
     logging.info("Getting AWS Backup vaults inventory...")
     backup_inventory = get_backup_vaults()
     print_inventory(backup_inventory, "AWS Backup Vaults Inventory")
-    save_inventory_to_csv(backup_inventory, "backup_inventory.csv")
+    save_inventory_to_csv(backup_inventory, "backup_inventory.csv", account_id)
 
 if __name__ == "__main__":
     main()
