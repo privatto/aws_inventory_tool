@@ -485,6 +485,39 @@ def get_backup_vaults():
         logging.error(f"Error retrieving AWS Backup vaults: {e}")
     return vaults
 
+def get_ebs_volumes():
+    """
+    Coleta informações dos volumes EBS.
+    """
+    ec2 = boto3.client('ec2')
+    account_id, region = get_account_and_region(ec2)
+    volumes = []
+    try:
+        paginator = ec2.get_paginator('describe_volumes')
+        for page in paginator.paginate():
+            for vol in page.get("Volumes", []):
+                vol_info = {
+                    "VolumeId": vol["VolumeId"],
+                    "Size": vol["Size"],
+                    "State": vol["State"],
+                    "VolumeType": vol["VolumeType"],
+                    "CreateTime": vol["CreateTime"].strftime("%Y-%m-%d %H:%M:%S"),
+                    "AvailabilityZone": vol["AvailabilityZone"],
+                    "Encrypted": vol["Encrypted"],
+                    "Attachments": [
+                        {
+                            "InstanceId": att.get("InstanceId", "N/A"),
+                            "State": att.get("State", "N/A")
+                        } for att in vol.get("Attachments", [])
+                    ],
+                    "AccountId": account_id,
+                    "Region": region
+                }
+                volumes.append(vol_info)
+    except ClientError as e:
+        logging.error(f"Error retrieving EBS volumes: {e}")
+    return volumes
+
 def save_inventory_to_csv(inventory, filename, account_id=None):
     """
     Salva uma lista de dicionários em um arquivo CSV.
@@ -626,6 +659,682 @@ def main():
     backup_inventory = get_backup_vaults()
     print_inventory(backup_inventory, "AWS Backup Vaults Inventory")
     save_inventory_to_csv(backup_inventory, "backup_inventory.csv", account_id)
+
+    logging.info("Getting EBS volumes inventory...")
+    ebs_inventory = get_ebs_volumes()
+    print_inventory(ebs_inventory, "EBS Volumes Inventory")
+    save_inventory_to_csv(ebs_inventory, "ebs_inventory.csv", account_id)
+
+    logging.info("Getting VPCs inventory...")
+    vpc_inventory = get_vpc_inventory()
+    print_inventory(vpc_inventory, "VPCs Inventory")
+    save_inventory_to_csv(vpc_inventory, "vpc_inventory.csv", account_id)
+
+    logging.info("Getting EC2 Security Groups inventory...")
+    ec2_sg_inventory = get_ec2_security_groups_inventory()
+    print_inventory(ec2_sg_inventory, "EC2 Security Groups Inventory")
+    save_inventory_to_csv(ec2_sg_inventory, "ec2_sg_inventory.csv", account_id)
+
+    logging.info("Getting EC2 Key Pairs inventory...")
+    ec2_keypair_inventory = get_ec2_key_pairs_inventory()
+    print_inventory(ec2_keypair_inventory, "EC2 Key Pairs Inventory")
+    save_inventory_to_csv(ec2_keypair_inventory, "ec2_keypair_inventory.csv", account_id)
+
+    logging.info("Getting ACM certificates inventory...")
+    acm_inventory = get_acm_inventory()
+    print_inventory(acm_inventory, "ACM Certificates Inventory")
+    save_inventory_to_csv(acm_inventory, "acm_inventory.csv", account_id)
+
+    logging.info("Getting Route53 Hosted Zones inventory...")
+    route53_zones_inventory = get_route53_hosted_zones_inventory()
+    print_inventory(route53_zones_inventory, "Route53 Hosted Zones Inventory")
+    save_inventory_to_csv(route53_zones_inventory, "route53_zones_inventory.csv", account_id)
+
+    logging.info("Getting Route53 Records inventory...")
+    route53_records_inventory = get_route53_records_inventory()
+    print_inventory(route53_records_inventory, "Route53 Records Inventory")
+    save_inventory_to_csv(route53_records_inventory, "route53_records_inventory.csv", account_id)
+
+    logging.info("Getting Elastic Beanstalk environments inventory...")
+    elastic_beanstalk_inventory = get_elastic_beanstalk_inventory()
+    print_inventory(elastic_beanstalk_inventory, "Elastic Beanstalk Environments Inventory")
+    save_inventory_to_csv(elastic_beanstalk_inventory, "elastic_beanstalk_inventory.csv", account_id)
+
+    logging.info("Getting Elastic IPs inventory...")
+    elastic_ips_inventory = get_elastic_ips_inventory()
+    print_inventory(elastic_ips_inventory, "Elastic IPs Inventory")
+    save_inventory_to_csv(elastic_ips_inventory, "elastic_ips_inventory.csv", account_id)
+
+    logging.info("Getting KMS keys inventory...")
+    kms_inventory = get_kms_inventory()
+    print_inventory(kms_inventory, "KMS Keys Inventory")
+    save_inventory_to_csv(kms_inventory, "kms_inventory.csv", account_id)
+
+    logging.info("Getting Secrets Manager secrets inventory...")
+    secrets_manager_inventory = get_secrets_manager_inventory()
+    print_inventory(secrets_manager_inventory, "Secrets Manager Secrets Inventory")
+    save_inventory_to_csv(secrets_manager_inventory, "secrets_manager_inventory.csv", account_id)
+
+    logging.info("Getting SSM parameters inventory...")
+    ssm_inventory = get_ssm_inventory()
+    print_inventory(ssm_inventory, "SSM Parameters Inventory")
+    save_inventory_to_csv(ssm_inventory, "ssm_inventory.csv", account_id)
+
+    logging.info("Getting Step Functions inventory...")
+    stepfunctions_inventory = get_stepfunctions_inventory()
+    print_inventory(stepfunctions_inventory, "Step Functions Inventory")
+    save_inventory_to_csv(stepfunctions_inventory, "stepfunctions_inventory.csv", account_id)
+
+    logging.info("Getting API Gateway APIs inventory...")
+    apigateway_inventory = get_apigateway_inventory()
+    print_inventory(apigateway_inventory, "API Gateway APIs Inventory")
+    save_inventory_to_csv(apigateway_inventory, "apigateway_inventory.csv", account_id)
+
+    logging.info("Getting AppSync APIs inventory...")
+    appsync_inventory = get_appsync_inventory()
+    print_inventory(appsync_inventory, "AppSync APIs Inventory")
+    save_inventory_to_csv(appsync_inventory, "appsync_inventory.csv", account_id)
+
+    logging.info("Getting CodeBuild projects inventory...")
+    codebuild_inventory = get_codebuild_inventory()
+    print_inventory(codebuild_inventory, "CodeBuild Projects Inventory")
+    save_inventory_to_csv(codebuild_inventory, "codebuild_inventory.csv", account_id)
+
+    logging.info("Getting CodePipeline pipelines inventory...")
+    codepipeline_inventory = get_codepipeline_inventory()
+    print_inventory(codepipeline_inventory, "CodePipeline Pipelines Inventory")
+    save_inventory_to_csv(codepipeline_inventory, "codepipeline_inventory.csv", account_id)
+
+    logging.info("Getting CodeDeploy applications inventory...")
+    codedeploy_inventory = get_codedeploy_inventory()
+    print_inventory(codedeploy_inventory, "CodeDeploy Applications Inventory")
+    save_inventory_to_csv(codedeploy_inventory, "codedeploy_inventory.csv", account_id)
+
+    logging.info("Getting CloudWatch alarms inventory...")
+    cloudwatch_alarms_inventory = get_cloudwatch_alarms_inventory()
+    print_inventory(cloudwatch_alarms_inventory, "CloudWatch Alarms Inventory")
+    save_inventory_to_csv(cloudwatch_alarms_inventory, "cloudwatch_alarms_inventory.csv", account_id)
+
+    logging.info("Getting CloudWatch log groups inventory...")
+    cloudwatch_log_groups_inventory = get_cloudwatch_log_groups_inventory()
+    print_inventory(cloudwatch_log_groups_inventory, "CloudWatch Log Groups Inventory")
+    save_inventory_to_csv(cloudwatch_log_groups_inventory, "cloudwatch_log_groups_inventory.csv", account_id)
+
+    logging.info("Getting Organizations inventory...")
+    organizations_inventory = get_organizations_inventory()
+    print_inventory(organizations_inventory, "Organizations Inventory")
+    save_inventory_to_csv(organizations_inventory, "organizations_inventory.csv", account_id)
+
+    logging.info("Getting Cost Explorer inventory...")
+    cost_explorer_inventory = get_cost_explorer_inventory()
+    print_inventory(cost_explorer_inventory, "Cost Explorer Inventory")
+    save_inventory_to_csv(cost_explorer_inventory, "cost_explorer_inventory.csv", account_id)
+
+    logging.info("Getting WAF inventory...")
+    waf_inventory = get_waf_inventory()
+    print_inventory(waf_inventory, "WAF Inventory")
+    save_inventory_to_csv(waf_inventory, "waf_inventory.csv", account_id)
+
+    logging.info("Getting Shield inventory...")
+    shield_inventory = get_shield_inventory()
+    print_inventory(shield_inventory, "Shield Inventory")
+    save_inventory_to_csv(shield_inventory, "shield_inventory.csv", account_id)
+
+    logging.info("Getting SageMaker inventory...")
+    sagemaker_inventory = get_sagemaker_inventory()
+    print_inventory(sagemaker_inventory, "SageMaker Inventory")
+    save_inventory_to_csv(sagemaker_inventory, "sagemaker_inventory.csv", account_id)
+
+    logging.info("Getting Athena inventory...")
+    athena_inventory = get_athena_inventory()
+    print_inventory(athena_inventory, "Athena Inventory")
+    save_inventory_to_csv(athena_inventory, "athena_inventory.csv", account_id)
+
+    logging.info("Getting Glue inventory...")
+    glue_inventory = get_glue_inventory()
+    print_inventory(glue_inventory, "Glue Inventory")
+    save_inventory_to_csv(glue_inventory, "glue_inventory.csv", account_id)
+
+    logging.info("Getting MSK inventory...")
+    msk_inventory = get_msk_inventory()
+    print_inventory(msk_inventory, "MSK Inventory")
+    save_inventory_to_csv(msk_inventory, "msk_inventory.csv", account_id)
+
+    logging.info("Getting Direct Connect inventory...")
+    directconnect_inventory = get_directconnect_inventory()
+    print_inventory(directconnect_inventory, "Direct Connect Inventory")
+    save_inventory_to_csv(directconnect_inventory, "directconnect_inventory.csv", account_id)
+
+    logging.info("Getting Outposts inventory...")
+    outposts_inventory = get_outposts_inventory()
+    print_inventory(outposts_inventory, "Outposts Inventory")
+    save_inventory_to_csv(outposts_inventory, "outposts_inventory.csv", account_id)
+
+def get_vpc_inventory():
+    ec2 = boto3.client('ec2')
+    account_id, region = get_account_and_region(ec2)
+    vpcs = []
+    try:
+        for vpc in ec2.describe_vpcs().get("Vpcs", []):
+            vpcs.append({
+                "VpcId": vpc["VpcId"],
+                "CidrBlock": vpc.get("CidrBlock", ""),
+                "State": vpc.get("State", ""),
+                "IsDefault": vpc.get("IsDefault", False),
+                "AccountId": account_id,
+                "Region": region
+            })
+    except ClientError as e:
+        logging.error(f"Error retrieving VPCs: {e}")
+    return vpcs
+
+def get_ec2_security_groups_inventory():
+    ec2 = boto3.client('ec2')
+    account_id, region = get_account_and_region(ec2)
+    sgs = []
+    try:
+        for sg in ec2.describe_security_groups().get("SecurityGroups", []):
+            sgs.append({
+                "GroupId": sg["GroupId"],
+                "GroupName": sg["GroupName"],
+                "Description": sg.get("Description", ""),
+                "VpcId": sg.get("VpcId", ""),
+                "AccountId": account_id,
+                "Region": region
+            })
+    except ClientError as e:
+        logging.error(f"Error retrieving Security Groups: {e}")
+    return sgs
+
+def get_ec2_key_pairs_inventory():
+    ec2 = boto3.client('ec2')
+    account_id, region = get_account_and_region(ec2)
+    keys = []
+    try:
+        for kp in ec2.describe_key_pairs().get("KeyPairs", []):
+            keys.append({
+                "KeyName": kp["KeyName"],
+                "KeyPairId": kp.get("KeyPairId", ""),
+                "KeyType": kp.get("KeyType", ""),
+                "AccountId": account_id,
+                "Region": region
+            })
+    except ClientError as e:
+        logging.error(f"Error retrieving Key Pairs: {e}")
+    return keys
+
+def get_acm_inventory():
+    acm = boto3.client('acm')
+    account_id, region = get_account_and_region(acm)
+    certs = []
+    try:
+        paginator = acm.get_paginator('list_certificates')
+        for page in paginator.paginate():
+            for cert in page.get("CertificateSummaryList", []):
+                certs.append({
+                    "CertificateArn": cert["CertificateArn"],
+                    "DomainName": cert.get("DomainName", ""),
+                    "AccountId": account_id,
+                    "Region": region
+                })
+    except ClientError as e:
+        logging.error(f"Error retrieving ACM certificates: {e}")
+    return certs
+
+def get_route53_hosted_zones_inventory():
+    r53 = boto3.client('route53')
+    account_id, region = get_account_and_region(r53)
+    zones = []
+    try:
+        for zone in r53.list_hosted_zones().get("HostedZones", []):
+            zones.append({
+                "Id": zone["Id"],
+                "Name": zone["Name"],
+                "PrivateZone": zone.get("Config", {}).get("PrivateZone", False),
+                "ResourceRecordSetCount": zone.get("ResourceRecordSetCount", 0),
+                "AccountId": account_id,
+                "Region": region
+            })
+    except ClientError as e:
+        logging.error(f"Error retrieving Route53 Hosted Zones: {e}")
+    return zones
+
+def get_route53_records_inventory():
+    r53 = boto3.client('route53')
+    account_id, region = get_account_and_region(r53)
+    records = []
+    try:
+        for zone in r53.list_hosted_zones().get("HostedZones", []):
+            zone_id = zone["Id"]
+            paginator = r53.get_paginator('list_resource_record_sets')
+            for page in paginator.paginate(HostedZoneId=zone_id):
+                for record in page.get("ResourceRecordSets", []):
+                    records.append({
+                        "HostedZoneId": zone_id,
+                        "Name": record.get("Name", ""),
+                        "Type": record.get("Type", ""),
+                        "TTL": record.get("TTL", ""),
+                        "AccountId": account_id,
+                        "Region": region
+                    })
+    except ClientError as e:
+        logging.error(f"Error retrieving Route53 Records: {e}")
+    return records
+
+def get_elastic_beanstalk_inventory():
+    eb = boto3.client('elasticbeanstalk')
+    account_id, region = get_account_and_region(eb)
+    envs = []
+    try:
+        for env in eb.describe_environments().get("Environments", []):
+            envs.append({
+                "EnvironmentName": env["EnvironmentName"],
+                "ApplicationName": env["ApplicationName"],
+                "Status": env.get("Status", ""),
+                "Health": env.get("Health", ""),
+                "AccountId": account_id,
+                "Region": region
+            })
+    except ClientError as e:
+        logging.error(f"Error retrieving Elastic Beanstalk environments: {e}")
+    return envs
+
+def get_elastic_ips_inventory():
+    ec2 = boto3.client('ec2')
+    account_id, region = get_account_and_region(ec2)
+    eips = []
+    try:
+        for eip in ec2.describe_addresses().get("Addresses", []):
+            eips.append({
+                "PublicIp": eip.get("PublicIp", ""),
+                "AllocationId": eip.get("AllocationId", ""),
+                "InstanceId": eip.get("InstanceId", ""),
+                "Domain": eip.get("Domain", ""),
+                "AccountId": account_id,
+                "Region": region
+            })
+    except ClientError as e:
+        logging.error(f"Error retrieving Elastic IPs: {e}")
+    return eips
+
+def get_kms_inventory():
+    kms = boto3.client('kms')
+    account_id, region = get_account_and_region(kms)
+    keys = []
+    try:
+        paginator = kms.get_paginator('list_keys')
+        for page in paginator.paginate():
+            for key in page.get("Keys", []):
+                key_id = key["KeyId"]
+                try:
+                    desc = kms.describe_key(KeyId=key_id)["KeyMetadata"]
+                    keys.append({
+                        "KeyId": key_id,
+                        "Arn": desc["Arn"],
+                        "Description": desc.get("Description", ""),
+                        "Enabled": desc.get("Enabled", False),
+                        "AccountId": account_id,
+                        "Region": region
+                    })
+                except ClientError as e:
+                    logging.error(f"Error describing KMS key {key_id}: {e}")
+    except ClientError as e:
+        logging.error(f"Error retrieving KMS keys: {e}")
+    return keys
+
+def get_secrets_manager_inventory():
+    sm = boto3.client('secretsmanager')
+    account_id, region = get_account_and_region(sm)
+    secrets = []
+    try:
+        paginator = sm.get_paginator('list_secrets')
+        for page in paginator.paginate():
+            for secret in page.get("SecretList", []):
+                secrets.append({
+                    "Name": secret.get("Name", ""),
+                    "ARN": secret.get("ARN", ""),
+                    "Description": secret.get("Description", ""),
+                    "AccountId": account_id,
+                    "Region": region
+                })
+    except ClientError as e:
+        logging.error(f"Error retrieving Secrets Manager secrets: {e}")
+    return secrets
+
+def get_ssm_inventory():
+    ssm = boto3.client('ssm')
+    account_id, region = get_account_and_region(ssm)
+    params = []
+    try:
+        paginator = ssm.get_paginator('describe_parameters')
+        for page in paginator.paginate():
+            for param in page.get("Parameters", []):
+                params.append({
+                    "Name": param.get("Name", ""),
+                    "Type": param.get("Type", ""),
+                    "AccountId": account_id,
+                    "Region": region
+                })
+    except ClientError as e:
+        logging.error(f"Error retrieving SSM parameters: {e}")
+    return params
+
+def get_stepfunctions_inventory():
+    sf = boto3.client('stepfunctions')
+    account_id, region = get_account_and_region(sf)
+    sfs = []
+    try:
+        paginator = sf.get_paginator('list_state_machines')
+        for page in paginator.paginate():
+            for sm in page.get("stateMachines", []):
+                sfs.append({
+                    "StateMachineArn": sm["stateMachineArn"],
+                    "Name": sm["name"],
+                    "AccountId": account_id,
+                    "Region": region
+                })
+    except ClientError as e:
+        logging.error(f"Error retrieving Step Functions: {e}")
+    return sfs
+
+def get_apigateway_inventory():
+    apigw = boto3.client('apigateway')
+    account_id, region = get_account_and_region(apigw)
+    apis = []
+    try:
+        for api in apigw.get_rest_apis().get("items", []):
+            apis.append({
+                "Id": api["id"],
+                "Name": api["name"],
+                "Description": api.get("description", ""),
+                "AccountId": account_id,
+                "Region": region
+            })
+    except ClientError as e:
+        logging.error(f"Error retrieving API Gateway APIs: {e}")
+    return apis
+
+def get_appsync_inventory():
+    appsync = boto3.client('appsync')
+    account_id, region = get_account_and_region(appsync)
+    apis = []
+    try:
+        paginator = appsync.get_paginator('list_graphql_apis')
+        for page in paginator.paginate():
+            for api in page.get("graphqlApis", []):
+                apis.append({
+                    "ApiId": api["apiId"],
+                    "Name": api["name"],
+                    "AuthenticationType": api.get("authenticationType", ""),
+                    "AccountId": account_id,
+                    "Region": region
+                })
+    except ClientError as e:
+        logging.error(f"Error retrieving AppSync APIs: {e}")
+    return apis
+
+def get_codebuild_inventory():
+    cb = boto3.client('codebuild')
+    account_id, region = get_account_and_region(cb)
+    projects = []
+    try:
+        for name in cb.list_projects().get("projects", []):
+            try:
+                proj = cb.batch_get_projects(names=[name])["projects"][0]
+                projects.append({
+                    "Name": proj["name"],
+                    "Arn": proj["arn"],
+                    "Description": proj.get("description", ""),
+                    "AccountId": account_id,
+                    "Region": region
+                })
+            except Exception:
+                continue
+    except ClientError as e:
+        logging.error(f"Error retrieving CodeBuild projects: {e}")
+    return projects
+
+def get_codepipeline_inventory():
+    cp = boto3.client('codepipeline')
+    account_id, region = get_account_and_region(cp)
+    pipelines = []
+    try:
+        for pipe in cp.list_pipelines().get("pipelines", []):
+            pipelines.append({
+                "Name": pipe["name"],
+                "Version": pipe.get("version", ""),
+                "AccountId": account_id,
+                "Region": region
+            })
+    except ClientError as e:
+        logging.error(f"Error retrieving CodePipeline pipelines: {e}")
+    return pipelines
+
+def get_codedeploy_inventory():
+    cd = boto3.client('codedeploy')
+    account_id, region = get_account_and_region(cd)
+    apps = []
+    try:
+        for app in cd.list_applications().get("applications", []):
+            apps.append({
+                "ApplicationName": app,
+                "AccountId": account_id,
+                "Region": region
+            })
+    except ClientError as e:
+        logging.error(f"Error retrieving CodeDeploy applications: {e}")
+    return apps
+
+def get_cloudwatch_alarms_inventory():
+    cw = boto3.client('cloudwatch')
+    account_id, region = get_account_and_region(cw)
+    alarms = []
+    try:
+        paginator = cw.get_paginator('describe_alarms')
+        for page in paginator.paginate():
+            for alarm in page.get("MetricAlarms", []):
+                alarms.append({
+                    "AlarmName": alarm["AlarmName"],
+                    "StateValue": alarm.get("StateValue", ""),
+                    "MetricName": alarm.get("MetricName", ""),
+                    "Namespace": alarm.get("Namespace", ""),
+                    "AccountId": account_id,
+                    "Region": region
+                })
+    except ClientError as e:
+        logging.error(f"Error retrieving CloudWatch alarms: {e}")
+    return alarms
+
+def get_cloudwatch_log_groups_inventory():
+    logs = boto3.client('logs')
+    account_id, region = get_account_and_region(logs)
+    groups = []
+    try:
+        paginator = logs.get_paginator('describe_log_groups')
+        for page in paginator.paginate():
+            for group in page.get("logGroups", []):
+                groups.append({
+                    "LogGroupName": group["logGroupName"],
+                    "Arn": group.get("arn", ""),
+                    "AccountId": account_id,
+                    "Region": region
+                })
+    except ClientError as e:
+        logging.error(f"Error retrieving CloudWatch log groups: {e}")
+    return groups
+
+def get_organizations_inventory():
+    org = boto3.client('organizations')
+    account_id, region = get_account_and_region(org)
+    orgs = []
+    try:
+        orgs.append(org.describe_organization()["Organization"])
+    except ClientError as e:
+        logging.error(f"Error retrieving Organizations: {e}")
+    return orgs
+
+def get_cost_explorer_inventory():
+    ce = boto3.client('ce')
+    account_id, region = get_account_and_region(ce)
+    # Only returns account/region, as cost data is complex
+    try:
+        return [{"AccountId": account_id, "Region": region}]
+    except ClientError as e:
+        logging.error(f"Error retrieving Cost Explorer data: {e}")
+    return []
+
+def get_waf_inventory():
+    waf = boto3.client('waf')
+    account_id, region = get_account_and_region(waf)
+    webacls = []
+    try:
+        for acl in waf.list_web_acls().get("WebACLs", []):
+            webacls.append({
+                "WebACLId": acl["WebACLId"],
+                "Name": acl["Name"],
+                "MetricName": acl.get("MetricName", ""),
+                "AccountId": account_id,
+                "Region": region
+            })
+    except ClientError as e:
+        logging.error(f"Error retrieving WAF WebACLs: {e}")
+    return webacls
+
+def get_shield_inventory():
+    shield = boto3.client('shield')
+    account_id, region = get_account_and_region(shield)
+    protections = []
+    try:
+        for prot in shield.list_protections().get("Protections", []):
+            protections.append({
+                "Id": prot["Id"],
+                "Name": prot["Name"],
+                "ResourceArn": prot.get("ResourceArn", ""),
+                "AccountId": account_id,
+                "Region": region
+            })
+    except ClientError as e:
+        logging.error(f"Error retrieving Shield protections: {e}")
+    return protections
+
+def get_sagemaker_inventory():
+    sm = boto3.client('sagemaker')
+    account_id, region = get_account_and_region(sm)
+    notebooks = []
+    try:
+        paginator = sm.get_paginator('list_notebook_instances')
+        for page in paginator.paginate():
+            for nb in page.get("NotebookInstances", []):
+                notebooks.append({
+                    "NotebookInstanceName": nb["NotebookInstanceName"],
+                    "InstanceType": nb.get("InstanceType", ""),
+                    "Status": nb.get("NotebookInstanceStatus", ""),
+                    "AccountId": account_id,
+                    "Region": region
+                })
+    except ClientError as e:
+        logging.error(f"Error retrieving SageMaker notebooks: {e}")
+    return notebooks
+
+def get_athena_inventory():
+    athena = boto3.client('athena')
+    account_id, region = get_account_and_region(athena)
+    workgroups = []
+    try:
+        for wg in athena.list_work_groups().get("WorkGroups", []):
+            workgroups.append({
+                "Name": wg["Name"],
+                "State": wg.get("State", ""),
+                "AccountId": account_id,
+                "Region": region
+            })
+    except ClientError as e:
+        logging.error(f"Error retrieving Athena workgroups: {e}")
+    return workgroups
+
+def get_glue_inventory():
+    glue = boto3.client('glue')
+    account_id, region = get_account_and_region(glue)
+    jobs = []
+    try:
+        for name in glue.list_jobs().get("JobNames", []):
+            jobs.append({
+                "JobName": name,
+                "AccountId": account_id,
+                "Region": region
+            })
+    except ClientError as e:
+        logging.error(f"Error retrieving Glue jobs: {e}")
+    return jobs
+
+def get_msk_inventory():
+    msk = boto3.client('kafka')
+    account_id, region = get_account_and_region(msk)
+    clusters = []
+    try:
+        for cl in msk.list_clusters().get("ClusterInfoList", []):
+            clusters.append({
+                "ClusterName": cl.get("ClusterName", ""),
+                "ClusterArn": cl.get("ClusterArn", ""),
+                "State": cl.get("State", ""),
+                "AccountId": account_id,
+                "Region": region
+            })
+    except ClientError as e:
+        logging.error(f"Error retrieving MSK clusters: {e}")
+    return clusters
+
+def get_directconnect_inventory():
+    dc = boto3.client('directconnect')
+    account_id, region = get_account_and_region(dc)
+    connections = []
+    try:
+        for conn in dc.describe_connections().get("connections", []):
+            connections.append({
+                "ConnectionId": conn["connectionId"],
+                "ConnectionName": conn.get("connectionName", ""),
+                "ConnectionState": conn.get("connectionState", ""),
+                "AccountId": account_id,
+                "Region": region
+            })
+    except ClientError as e:
+        logging.error(f"Error retrieving Direct Connect connections: {e}")
+    return connections
+
+def get_outposts_inventory():
+    op = boto3.client('outposts')
+    account_id, region = get_account_and_region(op)
+    outposts = []
+    try:
+        for outpost in op.list_outposts().get("Outposts", []):
+            outposts.append({
+                "OutpostId": outpost["OutpostId"],
+                "Name": outpost.get("Name", ""),
+                "SiteId": outpost.get("SiteId", ""),
+                "AccountId": account_id,
+                "Region": region
+            })
+    except ClientError as e:
+        logging.error(f"Error retrieving Outposts: {e}")
+    return outposts
+
+def get_servicecatalog_inventory():
+    sc = boto3.client('servicecatalog')
+    account_id, region = get_account_and_region(sc)
+    products = []
+    try:
+        paginator = sc.get_paginator('search_products_as_admin')
+        for page in paginator.paginate():
+            for prod in page.get("ProductViewDetails", []):
+                products.append({
+                    "ProductId": prod.get("ProductViewSummary", {}).get("ProductId", ""),
+                    "Name": prod.get("ProductViewSummary", {}).get("Name", ""),
+                    "AccountId": account_id,
+                    "Region": region
+                })
+    except ClientError as e:
+        logging.error(f"Error retrieving Service Catalog products: {e}")
+    return products
 
 if __name__ == "__main__":
     main()
