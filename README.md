@@ -6,6 +6,15 @@ This Python script collects inventory information for various AWS resources, inc
 - RDS Instances
 - S3 Buckets
 - Lambda Functions
+- Backup
+- ECR
+- ECS
+- SNS
+- SPOT Instances
+- EKS
+- ELB
+- IAM
+- EFS
 
 The script retrieves and prints the details of these resources in the AWS account using the `boto3` library.
 
@@ -46,6 +55,8 @@ The script retrieves and prints the details of these resources in the AWS accoun
 
 3. Configure AWS credentials: Ensure you have configured the AWS CLI with valid credentials or set up the required environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`).
 
+https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-envvars.html?icmpid=docs_sso_user_portal
+
 `aws configure`
 
 ---
@@ -63,10 +74,32 @@ The script will output the inventory for each service in the console, formatted 
 ## 🛡 Permissions
 Ensure the AWS credentials used have the following permissions for successful execution:
 
-EC2: `ec2:DescribeInstances`
-RDS: `rds:DescribeDBInstances`
-S3: `s3:ListAllMyBuckets`
-Lambda: `lambda:ListFunctions`
+      ec2:DescribeInstances
+      rds:DescribeDBInstances
+      s3:ListAllMyBuckets
+      s3:ListBucket
+      lambda:ListFunctions
+      backup:ListBackupVaults
+      backup:ListBackupPlans
+      backup:ListBackupJobs
+      backup:ListProtectedResources
+      ecr:DescribeRepositories
+      ecr:ListImages
+      ecs:ListClusters
+      ecs:ListServices
+      ecs:ListTasks
+      ecs:DescribeClusters
+      ecs:DescribeServices
+      ecs:DescribeTasks
+      sns:ListTopics
+      eks:ListClusters
+      eks:DescribeCluster
+      elasticloadbalancing:DescribeLoadBalancers
+      iam:ListUsers
+      iam:ListRoles
+      iam:ListGroups
+      iam:ListPolicies
+      elasticfilesystem:DescribeFileSystems
 
 ---
 ## ✨ Customization
