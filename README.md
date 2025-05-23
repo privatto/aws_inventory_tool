@@ -72,6 +72,25 @@ The script retrieves and prints the details of these resources in the AWS accoun
 - Includes error handling and logging for robust performance.
 - Modular design for easy customization and extension.
 - Saves each resource inventory to a CSV file, prefixed with the AWS account ID.
+- **NEW:** Includes a merge utility (`merge.py`) to unificar/concatenate CSV files by AWS product.
+
+---
+
+## 🔄 CSV Merge Utility
+
+The script `merge.py` allows you to automatically merge all CSV files in the current directory that correspond to the same AWS product (e.g., all EC2 CSVs, all S3 CSVs, etc.). For each AWS product, it generates a unified CSV file named `<produto>.csv` (e.g., `ec2.csv`, `s3.csv`).
+
+**How it works:**
+- Scans the current directory for all `.csv` files.
+- Identifies the AWS product in the filename (e.g., `_ec2_`, `_ec2.csv`, `ec2_`, `ec2.csv`).
+- Concatenates all files for the same product, even if they have different columns.
+- Saves a single CSV file per product with all the data combined.
+
+**Usage:**
+```bash
+python merge.py
+```
+After running, you will find one CSV file for each AWS product with all the data unified.
 
 ---
 
