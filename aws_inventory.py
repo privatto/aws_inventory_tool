@@ -87,7 +87,7 @@ def get_lambda_inventory():
             for function in page["Functions"]:
                 lambda_function_info = {
                     "FunctionName": function["FunctionName"],
-                    "Runtime": function["Runtime"],
+                    "Runtime": function.get("Runtime", "N/A"),  # Corrigido para evitar KeyError
                     "LastModified": function["LastModified"],
                     "CodeSize": function["CodeSize"],
                     "AccountId": account_id,
