@@ -19,7 +19,7 @@ produtos = [
     "codepipeline", "codedeploy", "cloudwatch_alarms", "cloudwatch_log_groups",
     "organizations", "cost_explorer", "waf", "shield", "sagemaker", "athena", "glue",
     "msk", "directconnect", "outposts", "servicecatalog", "macie", "guardduty", "detective",
-    "resource_groups", "resource_tag_editor"
+    "resource_groups", "resource_tag_editor", "iam_roles", "iam_users"
 ]
 
 # Cria um dicionário para armazenar arquivos por produto
