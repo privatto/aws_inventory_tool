@@ -27,6 +27,17 @@ The script retrieves and prints the details of these resources in the AWS accoun
   - **RDS Instances**: DB identifier, engine version, status, and endpoint.
   - **S3 Buckets**: Bucket names and creation dates.
   - **Lambda Functions**: Function names, runtimes, last modified timestamps, and code sizes.
+  - **Backup**: BackupVaultName,CreationDate,NumberOfRecoveryPoints and Arn.
+  - **Cloud Formation**: StackName,StackStatus and CreationTime.
+  - **ECR**: RepositoryName,RepositoryUri,CreatedAt and RegistryId.
+  - **EFS**: FileSystemId,CreationTime,LifeCycleState,NumberOfMountTargets and SizeInBytes.
+  - **EKS**: Name,Status,Version,Endpoint and CreatedAt.
+  - **ELB**: LoadBalancerName,DNSName,Type,State and CreatedTime.
+  - **IAM Roles**: RoleName,RoleId,CreateDate and Arn.
+  - **IAM Users**: UserName,UserId,CreateDate and Arn.
+  - **SNS**: TopicArn.
+  - **SPOT Instances**: SpotInstanceRequestId,State,StatusCode,StatusMessage,InstanceId,LaunchSpecification and CreateTime.
+  - **SQS**: QueueUrl.
 - Handles pagination for large inventories.
 - Includes error handling and logging for robust performance.
 - Modular design for easy customization and extension.
@@ -46,7 +57,7 @@ The script retrieves and prints the details of these resources in the AWS accoun
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/raydnel/aws_inventory_tool.git
+   git clone https://github.com/privatto/aws_inventory_tool.git
    cd aws-inventory-script
    
 2. Install dependencies:
