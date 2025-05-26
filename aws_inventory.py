@@ -20,6 +20,16 @@ def get_ec2_inventory():
         for page in paginator.paginate():
             for reservation in page["Reservations"]:
                 for instance in reservation["Instances"]:
+                    # Coleta o sistema operacional da imagem (AMI)
+                    os_name = "N/A"
+                    image_id = instance.get("ImageId")
+                    if image_id:
+                        try:
+                            images = ec2.describe_images(ImageIds=[image_id]).get("Images", [])
+                            if images:
+                                os_name = images[0].get("PlatformDetails", images[0].get("Description", "N/A"))
+                        except Exception as e:
+                            logging.warning(f"Could not get OS for instance {instance['InstanceId']}: {e}")
                     instance_info = {
                         "InstanceId": instance["InstanceId"],
                         "InstanceType": instance["InstanceType"],
@@ -28,6 +38,7 @@ def get_ec2_inventory():
                         "PrivateIpAddress": instance.get("PrivateIpAddress", "N/A"),
                         "PublicIpAddress": instance.get("PublicIpAddress", "N/A"),
                         "Name": next((tag["Value"] for tag in instance.get("Tags", []) if tag["Key"] == "Name"), "N/A"),
+                        "OS": os_name,  # Adicionado campo do sistema operacional
                         "AccountId": account_id,
                         "Region": region
                     }
@@ -51,6 +62,7 @@ def get_rds_inventory():
                     "InstanceCreateTime": instance["InstanceCreateTime"].strftime("%Y-%m-%d %H:%M:%S"),
                     "DBInstanceStatus": instance["DBInstanceStatus"],
                     "Endpoint": instance["Endpoint"]["Address"],
+                    "AllocatedStorageGiB": instance.get("AllocatedStorage", "N/A"),  # Adicionado campo de tamanho alocado
                     "AccountId": account_id,
                     "Region": region
                 }
@@ -66,9 +78,20 @@ def get_s3_inventory():
     try:
         response = s3.list_buckets()
         for bucket in response["Buckets"]:
+            bucket_name = bucket["Name"]
+            # Coleta o tamanho total dos objetos do bucket
+            total_size = 0
+            try:
+                paginator = s3.get_paginator('list_objects_v2')
+                for page in paginator.paginate(Bucket=bucket_name):
+                    for obj in page.get("Contents", []):
+                        total_size += obj.get("Size", 0)
+            except Exception as e:
+                logging.warning(f"Could not get size for bucket {bucket_name}: {e}")
             s3_bucket_info = {
-                "Name": bucket["Name"],
+                "Name": bucket_name,
                 "CreationDate": bucket["CreationDate"].strftime("%Y-%m-%d %H:%M:%S"),
+                "TotalSizeBytes": total_size,
                 "AccountId": account_id,
                 "Region": region
             }
@@ -124,6 +147,7 @@ def get_eks_inventory():
     return eks_clusters
 
 def get_spot_instance_requests():
+    import ast
     ec2 = boto3.client('ec2')
     account_id, region = get_account_and_region(ec2)
     spot_requests = []
@@ -131,13 +155,32 @@ def get_spot_instance_requests():
         paginator = ec2.get_paginator('describe_spot_instance_requests')
         for page in paginator.paginate():
             for req in page.get("SpotInstanceRequests", []):
+                # Coleta o tamanho alocado do EBS, se disponível
+                allocated_storage_gib = "N/A"
+                launch_spec = req.get("LaunchSpecification", {})
+                block_devices = launch_spec.get("BlockDeviceMappings", [])
+                if block_devices and isinstance(block_devices, list):
+                    ebs = block_devices[0].get("Ebs", {}) if block_devices else {}
+                    allocated_storage_gib = ebs.get("VolumeSize", "N/A")
+                # Coleta o sistema operacional da imagem (AMI)
+                os_name = "N/A"
+                image_id = launch_spec.get("ImageId")
+                if image_id:
+                    try:
+                        images = ec2.describe_images(ImageIds=[image_id]).get("Images", [])
+                        if images:
+                            os_name = images[0].get("PlatformDetails", images[0].get("Description", "N/A"))
+                    except Exception as e:
+                        logging.warning(f"Could not get OS for Spot request {req['SpotInstanceRequestId']}: {e}")
                 spot_info = {
                     "SpotInstanceRequestId": req["SpotInstanceRequestId"],
                     "State": req["State"],
                     "StatusCode": req["Status"]["Code"],
                     "StatusMessage": req["Status"].get("Message", ""),
                     "InstanceId": req.get("InstanceId", "N/A"),
-                    "LaunchSpecification": req.get("LaunchSpecification", {}),
+                    "LaunchSpecification": launch_spec,
+                    "AllocatedStorageGiB": allocated_storage_gib,
+                    "OS": os_name,  # Adicionado campo do sistema operacional
                     "CreateTime": req["CreateTime"].strftime("%Y-%m-%d %H:%M:%S"),
                     "AccountId": account_id,
                     "Region": region
@@ -472,10 +515,21 @@ def get_backup_vaults():
         paginator = backup.get_paginator('list_backup_vaults')
         for page in paginator.paginate():
             for vault in page.get("BackupVaultList", []):
+                # Coletar o tamanho total dos backups no vault
+                total_size_bytes = 0
+                try:
+                    # Listar recovery points para o vault e somar o tamanho
+                    rp_paginator = backup.get_paginator('list_recovery_points_by_backup_vault')
+                    for rp_page in rp_paginator.paginate(BackupVaultName=vault["BackupVaultName"]):
+                        for rp in rp_page.get("RecoveryPoints", []):
+                            total_size_bytes += rp.get("BackupSizeInBytes", 0)
+                except Exception as e:
+                    logging.warning(f"Could not get size for backup vault {vault['BackupVaultName']}: {e}")
                 vault_info = {
                     "BackupVaultName": vault["BackupVaultName"],
                     "CreationDate": vault["CreationDate"].strftime("%Y-%m-%d %H:%M:%S"),
                     "NumberOfRecoveryPoints": vault.get("NumberOfRecoveryPoints", 0),
+                    "TotalBackupSizeBytes": total_size_bytes,  # Adicionado campo de tamanho total
                     "Arn": vault["BackupVaultArn"],
                     "AccountId": account_id,
                     "Region": region
@@ -487,7 +541,7 @@ def get_backup_vaults():
 
 def get_ebs_volumes():
     """
-    Coleta informações dos volumes EBS.
+    Coleta informações dos volumes EBS, incluindo o tamanho em GiB.
     """
     ec2 = boto3.client('ec2')
     account_id, region = get_account_and_region(ec2)
@@ -498,7 +552,7 @@ def get_ebs_volumes():
             for vol in page.get("Volumes", []):
                 vol_info = {
                     "VolumeId": vol["VolumeId"],
-                    "Size": vol["Size"],
+                    "SizeGiB": vol["Size"],  # Renomeado para clareza
                     "State": vol["State"],
                     "VolumeType": vol["VolumeType"],
                     "CreateTime": vol["CreateTime"].strftime("%Y-%m-%d %H:%M:%S"),
