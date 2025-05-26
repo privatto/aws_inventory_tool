@@ -18,8 +18,9 @@ def get_ec2_inventory():
     try:
         paginator = ec2.get_paginator('describe_instances')
         for page in paginator.paginate():
-            for reservation in page["Reservations"]:
-                for instance in reservation["Instances"]:
+            # Use .get para evitar KeyError e garantir robustez
+            for reservation in page.get("Reservations", []):
+                for instance in reservation.get("Instances", []):
                     # Coleta o sistema operacional da imagem (AMI)
                     os_name = "N/A"
                     image_id = instance.get("ImageId")
@@ -29,22 +30,24 @@ def get_ec2_inventory():
                             if images:
                                 os_name = images[0].get("PlatformDetails", images[0].get("Description", "N/A"))
                         except Exception as e:
-                            logging.warning(f"Could not get OS for instance {instance['InstanceId']}: {e}")
+                            logging.warning(f"Could not get OS for instance {instance.get('InstanceId', 'N/A')}: {e}")
                     instance_info = {
-                        "InstanceId": instance["InstanceId"],
-                        "InstanceType": instance["InstanceType"],
-                        "LaunchTime": instance["LaunchTime"].strftime("%Y-%m-%d %H:%M:%S"),
-                        "State": instance["State"]["Name"],
+                        "InstanceId": instance.get("InstanceId", "N/A"),
+                        "InstanceType": instance.get("InstanceType", "N/A"),
+                        "LaunchTime": instance.get("LaunchTime", "").strftime("%Y-%m-%d %H:%M:%S") if instance.get("LaunchTime") else "",
+                        "State": instance.get("State", {}).get("Name", "N/A"),
                         "PrivateIpAddress": instance.get("PrivateIpAddress", "N/A"),
                         "PublicIpAddress": instance.get("PublicIpAddress", "N/A"),
-                        "Name": next((tag["Value"] for tag in instance.get("Tags", []) if tag["Key"] == "Name"), "N/A"),
-                        "OS": os_name,  # Adicionado campo do sistema operacional
+                        "Name": next((tag.get("Value") for tag in instance.get("Tags", []) if tag.get("Key") == "Name"), "N/A"),
+                        "OS": os_name,
                         "AccountId": account_id,
                         "Region": region
                     }
                     instances.append(instance_info)
     except ClientError as e:
         logging.error(f"Error retrieving EC2 instances: {e}")
+    except Exception as e:
+        logging.error(f"Unexpected error retrieving EC2 instances: {e}")
     return instances
 
 def get_rds_inventory():
@@ -71,15 +74,75 @@ def get_rds_inventory():
         logging.error(f"Error retrieving RDS instances: {e}")
     return rds_instances
 
+def get_allowed_services():
+    """
+    Tenta acessar operações básicas de cada serviço suportado e retorna uma lista dos serviços permitidos.
+    """
+    services = {
+        "ec2": lambda: boto3.client("ec2").describe_instances(MaxResults=1),
+        "rds": lambda: boto3.client("rds").describe_db_instances(MaxRecords=1),
+        "lambda": lambda: boto3.client("lambda").list_functions(MaxItems=1),
+        "eks": lambda: boto3.client("eks").list_clusters(maxResults=1),
+        "s3": lambda: boto3.client("s3").list_buckets(),
+        "iam": lambda: boto3.client("iam").list_users(MaxItems=1),
+        "cloudfront": lambda: boto3.client("cloudfront").list_distributions(MaxItems=1),
+        "dynamodb": lambda: boto3.client("dynamodb").list_tables(Limit=1),
+        "elbv2": lambda: boto3.client("elbv2").describe_load_balancers(PageSize=1),
+        "sns": lambda: boto3.client("sns").list_topics(),
+        "sqs": lambda: boto3.client("sqs").list_queues(MaxResults=1),
+        "cloudformation": lambda: boto3.client("cloudformation").describe_stacks(MaxResults=1),
+        "ecr": lambda: boto3.client("ecr").describe_repositories(maxResults=1),
+        "docdb": lambda: boto3.client("docdb").describe_db_clusters(MaxRecords=1),
+        "redshift": lambda: boto3.client("redshift").describe_clusters(MaxRecords=1),
+        "elasticache": lambda: boto3.client("elasticache").describe_cache_clusters(MaxRecords=1),
+        "efs": lambda: boto3.client("efs").describe_file_systems(MaxItems=1),
+        "fsx": lambda: boto3.client("fsx").describe_file_systems(MaxResults=1),
+        "glacier": lambda: boto3.client("glacier").list_vaults(limit=1),
+        "backup": lambda: boto3.client("backup").list_backup_vaults(MaxResults=1),
+        "kms": lambda: boto3.client("kms").list_keys(Limit=1),
+        "secretsmanager": lambda: boto3.client("secretsmanager").list_secrets(MaxResults=1),
+        "ssm": lambda: boto3.client("ssm").describe_parameters(MaxResults=1),
+        "stepfunctions": lambda: boto3.client("stepfunctions").list_state_machines(maxResults=1),
+        "apigateway": lambda: boto3.client("apigateway").get_rest_apis(limit=1),
+        "appsync": lambda: boto3.client("appsync").list_graphql_apis(maxResults=1),
+        "codebuild": lambda: boto3.client("codebuild").list_projects(maxResults=1),
+        "codepipeline": lambda: boto3.client("codepipeline").list_pipelines(maxResults=1),
+        "codedeploy": lambda: boto3.client("codedeploy").list_applications(MaxResults=1),
+        "cloudwatch": lambda: boto3.client("cloudwatch").describe_alarms(MaxRecords=1),
+        "logs": lambda: boto3.client("logs").describe_log_groups(limit=1),
+        "organizations": lambda: boto3.client("organizations").describe_organization(),
+        "ce": lambda: boto3.client("ce").get_cost_and_usage(TimePeriod={'Start': '2020-01-01', 'End': '2020-01-02'}, Granularity='DAILY', Metrics=['BlendedCost']),
+        "waf": lambda: boto3.client("waf").list_web_acls(Limit=1),
+        "shield": lambda: boto3.client("shield").list_protections(MaxResults=1),
+        "sagemaker": lambda: boto3.client("sagemaker").list_notebook_instances(MaxResults=1),
+        "athena": lambda: boto3.client("athena").list_work_groups(MaxResults=1),
+        "glue": lambda: boto3.client("glue").list_jobs(MaxResults=1),
+        "kafka": lambda: boto3.client("kafka").list_clusters(MaxResults=1),
+        "directconnect": lambda: boto3.client("directconnect").describe_connections(),
+        "outposts": lambda: boto3.client("outposts").list_outposts(MaxResults=1),
+        "servicecatalog": lambda: boto3.client("servicecatalog").search_products_as_admin(PageSize=1),
+    }
+    allowed = []
+    for svc, func in services.items():
+        try:
+            func()
+            allowed.append(svc)
+        except Exception as e:
+            logging.debug(f"Sem permissão para {svc}: {e}")
+    logging.info(f"Serviços permitidos para a credencial: {allowed}")
+    return allowed
+
 def get_s3_inventory():
-    s3 = boto3.client('s3')
+    # Aumenta o timeout/buffer do boto3 para evitar timeout em buckets grandes
+    from botocore.config import Config
+    s3_config = Config(connect_timeout=60, read_timeout=300, retries={'max_attempts': 10})
+    s3 = boto3.client('s3', config=s3_config)
     account_id, region = get_account_and_region(s3)
     s3_buckets = []
     try:
         response = s3.list_buckets()
         for bucket in response["Buckets"]:
             bucket_name = bucket["Name"]
-            # Coleta o tamanho total dos objetos do bucket
             total_size = 0
             try:
                 paginator = s3.get_paginator('list_objects_v2')
@@ -100,478 +163,6 @@ def get_s3_inventory():
         logging.error(f"Error retrieving S3 buckets: {e}")
     return s3_buckets
 
-def get_lambda_inventory():
-    lambda_client = boto3.client('lambda')
-    account_id, region = get_account_and_region(lambda_client)
-    lambda_functions = []
-    try:
-        paginator = lambda_client.get_paginator('list_functions')
-        for page in paginator.paginate():
-            for function in page["Functions"]:
-                lambda_function_info = {
-                    "FunctionName": function["FunctionName"],
-                    "Runtime": function.get("Runtime", "N/A"),  # Corrigido para evitar KeyError
-                    "LastModified": function["LastModified"],
-                    "CodeSize": function["CodeSize"],
-                    "AccountId": account_id,
-                    "Region": region
-                }
-                lambda_functions.append(lambda_function_info)
-    except ClientError as e:
-        logging.error(f"Error retrieving Lambda functions: {e}")
-    return lambda_functions
-
-def get_eks_inventory():
-    eks = boto3.client('eks')
-    account_id, region = get_account_and_region(eks)
-    eks_clusters = []
-    try:
-        clusters_response = eks.list_clusters()
-        for cluster_name in clusters_response.get("clusters", []):
-            try:
-                cluster_info = eks.describe_cluster(name=cluster_name)["cluster"]
-                eks_cluster_info = {
-                    "Name": cluster_info["name"],
-                    "Status": cluster_info["status"],
-                    "Version": cluster_info["version"],
-                    "Endpoint": cluster_info["endpoint"],
-                    "CreatedAt": cluster_info["createdAt"].strftime("%Y-%m-%d %H:%M:%S"),
-                    "AccountId": account_id,
-                    "Region": region
-                }
-                eks_clusters.append(eks_cluster_info)
-            except ClientError as e:
-                logging.error(f"Error describing EKS cluster {cluster_name}: {e}")
-    except ClientError as e:
-        logging.error(f"Error retrieving EKS clusters: {e}")
-    return eks_clusters
-
-def get_spot_instance_requests():
-    import ast
-    ec2 = boto3.client('ec2')
-    account_id, region = get_account_and_region(ec2)
-    spot_requests = []
-    try:
-        paginator = ec2.get_paginator('describe_spot_instance_requests')
-        for page in paginator.paginate():
-            for req in page.get("SpotInstanceRequests", []):
-                # Coleta o tamanho alocado do EBS, se disponível
-                allocated_storage_gib = "N/A"
-                launch_spec = req.get("LaunchSpecification", {})
-                block_devices = launch_spec.get("BlockDeviceMappings", [])
-                if block_devices and isinstance(block_devices, list):
-                    ebs = block_devices[0].get("Ebs", {}) if block_devices else {}
-                    allocated_storage_gib = ebs.get("VolumeSize", "N/A")
-                # Coleta o sistema operacional da imagem (AMI)
-                os_name = "N/A"
-                image_id = launch_spec.get("ImageId")
-                if image_id:
-                    try:
-                        images = ec2.describe_images(ImageIds=[image_id]).get("Images", [])
-                        if images:
-                            os_name = images[0].get("PlatformDetails", images[0].get("Description", "N/A"))
-                    except Exception as e:
-                        logging.warning(f"Could not get OS for Spot request {req['SpotInstanceRequestId']}: {e}")
-                spot_info = {
-                    "SpotInstanceRequestId": req["SpotInstanceRequestId"],
-                    "State": req["State"],
-                    "StatusCode": req["Status"]["Code"],
-                    "StatusMessage": req["Status"].get("Message", ""),
-                    "InstanceId": req.get("InstanceId", "N/A"),
-                    "LaunchSpecification": launch_spec,
-                    "AllocatedStorageGiB": allocated_storage_gib,
-                    "OS": os_name,  # Adicionado campo do sistema operacional
-                    "CreateTime": req["CreateTime"].strftime("%Y-%m-%d %H:%M:%S"),
-                    "AccountId": account_id,
-                    "Region": region
-                }
-                spot_requests.append(spot_info)
-    except ClientError as e:
-        logging.error(f"Error retrieving Spot Instance Requests: {e}")
-    return spot_requests
-
-def get_iam_users():
-    iam = boto3.client('iam')
-    account_id, region = get_account_and_region(iam)
-    users = []
-    try:
-        paginator = iam.get_paginator('list_users')
-        for page in paginator.paginate():
-            for user in page.get("Users", []):
-                user_info = {
-                    "UserName": user["UserName"],
-                    "UserId": user["UserId"],
-                    "CreateDate": user["CreateDate"].strftime("%Y-%m-%d %H:%M:%S"),
-                    "Arn": user["Arn"],
-                    "AccountId": account_id,
-                    "Region": region
-                }
-                users.append(user_info)
-    except ClientError as e:
-        logging.error(f"Error retrieving IAM users: {e}")
-    return users
-
-def get_iam_roles():
-    iam = boto3.client('iam')
-    account_id, region = get_account_and_region(iam)
-    roles = []
-    try:
-        paginator = iam.get_paginator('list_roles')
-        for page in paginator.paginate():
-            for role in page.get("Roles", []):
-                role_info = {
-                    "RoleName": role["RoleName"],
-                    "RoleId": role["RoleId"],
-                    "CreateDate": role["CreateDate"].strftime("%Y-%m-%d %H:%M:%S"),
-                    "Arn": role["Arn"],
-                    "AccountId": account_id,
-                    "Region": region
-                }
-                roles.append(role_info)
-    except ClientError as e:
-        logging.error(f"Error retrieving IAM roles: {e}")
-    return roles
-
-def get_cloudfront_distributions():
-    cf = boto3.client('cloudfront')
-    account_id, region = get_account_and_region(cf)
-    distributions = []
-    try:
-        paginator = cf.get_paginator('list_distributions')
-        for page in paginator.paginate():
-            for dist in page.get("DistributionList", {}).get("Items", []):
-                dist_info = {
-                    "Id": dist["Id"],
-                    "DomainName": dist["DomainName"],
-                    "Status": dist["Status"],
-                    "LastModifiedTime": dist["LastModifiedTime"].strftime("%Y-%m-%d %H:%M:%S"),
-                    "AccountId": account_id,
-                    "Region": region
-                }
-                distributions.append(dist_info)
-    except ClientError as e:
-        logging.error(f"Error retrieving CloudFront distributions: {e}")
-    return distributions
-
-def get_dynamodb_tables():
-    dynamodb = boto3.client('dynamodb')
-    account_id, region = get_account_and_region(dynamodb)
-    tables = []
-    try:
-        paginator = dynamodb.get_paginator('list_tables')
-        for page in paginator.paginate():
-            for table_name in page.get("TableNames", []):
-                try:
-                    desc = dynamodb.describe_table(TableName=table_name)["Table"]
-                    table_info = {
-                        "TableName": desc["TableName"],
-                        "TableStatus": desc["TableStatus"],
-                        "ItemCount": desc.get("ItemCount", 0),
-                        "CreationDateTime": desc["CreationDateTime"].strftime("%Y-%m-%d %H:%M:%S"),
-                        "AccountId": account_id,
-                        "Region": region
-                    }
-                    tables.append(table_info)
-                except ClientError as e:
-                    logging.error(f"Error describing DynamoDB table {table_name}: {e}")
-    except ClientError as e:
-        logging.error(f"Error retrieving DynamoDB tables: {e}")
-    return tables
-
-def get_elbv2_load_balancers():
-    elbv2 = boto3.client('elbv2')
-    account_id, region = get_account_and_region(elbv2)
-    lbs = []
-    try:
-        paginator = elbv2.get_paginator('describe_load_balancers')
-        for page in paginator.paginate():
-            for lb in page.get("LoadBalancers", []):
-                lb_info = {
-                    "LoadBalancerName": lb["LoadBalancerName"],
-                    "DNSName": lb["DNSName"],
-                    "Type": lb["Type"],
-                    "State": lb["State"]["Code"],
-                    "CreatedTime": lb["CreatedTime"].strftime("%Y-%m-%d %H:%M:%S"),
-                    "AccountId": account_id,
-                    "Region": region
-                }
-                lbs.append(lb_info)
-    except ClientError as e:
-        logging.error(f"Error retrieving ELBv2 load balancers: {e}")
-    return lbs
-
-def get_sns_topics():
-    sns = boto3.client('sns')
-    account_id, region = get_account_and_region(sns)
-    topics = []
-    try:
-        paginator = sns.get_paginator('list_topics')
-        for page in paginator.paginate():
-            for topic in page.get("Topics", []):
-                topics.append({
-                    "TopicArn": topic["TopicArn"],
-                    "AccountId": account_id,
-                    "Region": region
-                })
-    except ClientError as e:
-        logging.error(f"Error retrieving SNS topics: {e}")
-    return topics
-
-def get_sqs_queues():
-    sqs = boto3.client('sqs')
-    account_id, region = get_account_and_region(sqs)
-    queues = []
-    try:
-        response = sqs.list_queues()
-        for url in response.get("QueueUrls", []):
-            queues.append({
-                "QueueUrl": url,
-                "AccountId": account_id,
-                "Region": region
-            })
-    except ClientError as e:
-        logging.error(f"Error retrieving SQS queues: {e}")
-    return queues
-
-def get_cloudformation_stacks():
-    cfn = boto3.client('cloudformation')
-    account_id, region = get_account_and_region(cfn)
-    stacks = []
-    try:
-        paginator = cfn.get_paginator('describe_stacks')
-        for page in paginator.paginate():
-            for stack in page.get("Stacks", []):
-                stack_info = {
-                    "StackName": stack["StackName"],
-                    "StackStatus": stack["StackStatus"],
-                    "CreationTime": stack["CreationTime"].strftime("%Y-%m-%d %H:%M:%S"),
-                    "AccountId": account_id,
-                    "Region": region
-                }
-                stacks.append(stack_info)
-    except ClientError as e:
-        logging.error(f"Error retrieving CloudFormation stacks: {e}")
-    return stacks
-
-def get_ecr_repositories():
-    ecr = boto3.client('ecr')
-    account_id, region = get_account_and_region(ecr)
-    repos = []
-    try:
-        paginator = ecr.get_paginator('describe_repositories')
-        for page in paginator.paginate():
-            for repo in page.get("repositories", []):
-                repo_info = {
-                    "RepositoryName": repo["repositoryName"],
-                    "RepositoryUri": repo["repositoryUri"],
-                    "CreatedAt": repo["createdAt"].strftime("%Y-%m-%d %H:%M:%S"),
-                    "RegistryId": repo["registryId"],
-                    "AccountId": account_id,
-                    "Region": region
-                }
-                repos.append(repo_info)
-    except ClientError as e:
-        logging.error(f"Error retrieving ECR repositories: {e}")
-    return repos
-
-def get_docdb_clusters():
-    docdb = boto3.client('docdb')
-    account_id, region = get_account_and_region(docdb)
-    clusters = []
-    try:
-        paginator = docdb.get_paginator('describe_db_clusters')
-        for page in paginator.paginate():
-            for cluster in page.get("DBClusters", []):
-                cluster_info = {
-                    "DBClusterIdentifier": cluster["DBClusterIdentifier"],
-                    "Status": cluster["Status"],
-                    "Engine": cluster["Engine"],
-                    "EngineVersion": cluster["EngineVersion"],
-                    "Endpoint": cluster.get("Endpoint", "N/A"),
-                    "ClusterCreateTime": cluster["ClusterCreateTime"].strftime("%Y-%m-%d %H:%M:%S"),
-                    "AccountId": account_id,
-                    "Region": region
-                }
-                clusters.append(cluster_info)
-    except ClientError as e:
-        logging.error(f"Error retrieving DocumentDB clusters: {e}")
-    return clusters
-
-def get_redshift_clusters():
-    redshift = boto3.client('redshift')
-    account_id, region = get_account_and_region(redshift)
-    clusters = []
-    try:
-        paginator = redshift.get_paginator('describe_clusters')
-        for page in paginator.paginate():
-            for cluster in page.get("Clusters", []):
-                cluster_info = {
-                    "ClusterIdentifier": cluster["ClusterIdentifier"],
-                    "NodeType": cluster["NodeType"],
-                    "ClusterStatus": cluster["ClusterStatus"],
-                    "ClusterCreateTime": cluster["ClusterCreateTime"].strftime("%Y-%m-%d %H:%M:%S"),
-                    "Endpoint": cluster.get("Endpoint", {}).get("Address", "N/A"),
-                    "AccountId": account_id,
-                    "Region": region
-                }
-                clusters.append(cluster_info)
-    except ClientError as e:
-        logging.error(f"Error retrieving Redshift clusters: {e}")
-    return clusters
-
-def get_elasticache_clusters():
-    elasticache = boto3.client('elasticache')
-    account_id, region = get_account_and_region(elasticache)
-    clusters = []
-    try:
-        paginator = elasticache.get_paginator('describe_cache_clusters')
-        for page in paginator.paginate(ShowCacheNodeInfo=True):
-            for cluster in page.get("CacheClusters", []):
-                cluster_info = {
-                    "CacheClusterId": cluster["CacheClusterId"],
-                    "Engine": cluster["Engine"],
-                    "EngineVersion": cluster["EngineVersion"],
-                    "CacheClusterStatus": cluster["CacheClusterStatus"],
-                    "NumCacheNodes": cluster["NumCacheNodes"],
-                    "CacheNodeType": cluster["CacheNodeType"],
-                    "CacheClusterCreateTime": cluster["CacheClusterCreateTime"].strftime("%Y-%m-%d %H:%M:%S"),
-                    "AccountId": account_id,
-                    "Region": region
-                }
-                clusters.append(cluster_info)
-    except ClientError as e:
-        logging.error(f"Error retrieving ElastiCache clusters: {e}")
-    return clusters
-
-def get_efs_file_systems():
-    efs = boto3.client('efs')
-    account_id, region = get_account_and_region(efs)
-    filesystems = []
-    try:
-        response = efs.describe_file_systems()
-        for fs in response.get("FileSystems", []):
-            fs_info = {
-                "FileSystemId": fs["FileSystemId"],
-                "CreationTime": fs["CreationTime"].strftime("%Y-%m-%d %H:%M:%S"),
-                "LifeCycleState": fs["LifeCycleState"],
-                "NumberOfMountTargets": fs["NumberOfMountTargets"],
-                "SizeInBytes": fs["SizeInBytes"]["Value"],
-                "AccountId": account_id,
-                "Region": region
-            }
-            filesystems.append(fs_info)
-    except ClientError as e:
-        logging.error(f"Error retrieving EFS file systems: {e}")
-    return filesystems
-
-def get_fsx_file_systems():
-    fsx = boto3.client('fsx')
-    account_id, region = get_account_and_region(fsx)
-    filesystems = []
-    try:
-        paginator = fsx.get_paginator('describe_file_systems')
-        for page in paginator.paginate():
-            for fs in page.get("FileSystems", []):
-                fs_info = {
-                    "FileSystemId": fs["FileSystemId"],
-                    "FileSystemType": fs["FileSystemType"],
-                    "Lifecycle": fs["Lifecycle"],
-                    "CreationTime": fs["CreationTime"].strftime("%Y-%m-%d %H:%M:%S"),
-                    "StorageCapacity": fs["StorageCapacity"],
-                    "AccountId": account_id,
-                    "Region": region
-                }
-                filesystems.append(fs_info)
-    except ClientError as e:
-        logging.error(f"Error retrieving FSx file systems: {e}")
-    return filesystems
-
-def get_glacier_vaults():
-    glacier = boto3.client('glacier')
-    account_id, region = get_account_and_region(glacier)
-    vaults = []
-    try:
-        paginator = glacier.get_paginator('list_vaults')
-        for page in paginator.paginate():
-            for vault in page.get("VaultList", []):
-                vault_info = {
-                    "VaultName": vault["VaultName"],
-                    "CreationDate": vault["CreationDate"],
-                    "NumberOfArchives": vault.get("NumberOfArchives", 0),
-                    "SizeInBytes": vault.get("SizeInBytes", 0),
-                    "AccountId": account_id,
-                    "Region": region
-                }
-                vaults.append(vault_info)
-    except ClientError as e:
-        logging.error(f"Error retrieving Glacier vaults: {e}")
-    return vaults
-
-def get_backup_vaults():
-    backup = boto3.client('backup')
-    account_id, region = get_account_and_region(backup)
-    vaults = []
-    try:
-        paginator = backup.get_paginator('list_backup_vaults')
-        for page in paginator.paginate():
-            for vault in page.get("BackupVaultList", []):
-                # Coletar o tamanho total dos backups no vault
-                total_size_bytes = 0
-                try:
-                    # Listar recovery points para o vault e somar o tamanho
-                    rp_paginator = backup.get_paginator('list_recovery_points_by_backup_vault')
-                    for rp_page in rp_paginator.paginate(BackupVaultName=vault["BackupVaultName"]):
-                        for rp in rp_page.get("RecoveryPoints", []):
-                            total_size_bytes += rp.get("BackupSizeInBytes", 0)
-                except Exception as e:
-                    logging.warning(f"Could not get size for backup vault {vault['BackupVaultName']}: {e}")
-                vault_info = {
-                    "BackupVaultName": vault["BackupVaultName"],
-                    "CreationDate": vault["CreationDate"].strftime("%Y-%m-%d %H:%M:%S"),
-                    "NumberOfRecoveryPoints": vault.get("NumberOfRecoveryPoints", 0),
-                    "TotalBackupSizeBytes": total_size_bytes,  # Adicionado campo de tamanho total
-                    "Arn": vault["BackupVaultArn"],
-                    "AccountId": account_id,
-                    "Region": region
-                }
-                vaults.append(vault_info)
-    except ClientError as e:
-        logging.error(f"Error retrieving AWS Backup vaults: {e}")
-    return vaults
-
-def get_ebs_volumes():
-    """
-    Coleta informações dos volumes EBS, incluindo o tamanho em GiB.
-    """
-    ec2 = boto3.client('ec2')
-    account_id, region = get_account_and_region(ec2)
-    volumes = []
-    try:
-        paginator = ec2.get_paginator('describe_volumes')
-        for page in paginator.paginate():
-            for vol in page.get("Volumes", []):
-                vol_info = {
-                    "VolumeId": vol["VolumeId"],
-                    "SizeGiB": vol["Size"],  # Renomeado para clareza
-                    "State": vol["State"],
-                    "VolumeType": vol["VolumeType"],
-                    "CreateTime": vol["CreateTime"].strftime("%Y-%m-%d %H:%M:%S"),
-                    "AvailabilityZone": vol["AvailabilityZone"],
-                    "Encrypted": vol["Encrypted"],
-                    "Attachments": [
-                        {
-                            "InstanceId": att.get("InstanceId", "N/A"),
-                            "State": att.get("State", "N/A")
-                        } for att in vol.get("Attachments", [])
-                    ],
-                    "AccountId": account_id,
-                    "Region": region
-                }
-                volumes.append(vol_info)
-    except ClientError as e:
-        logging.error(f"Error retrieving EBS volumes: {e}")
-    return volumes
-
 def save_inventory_to_csv(inventory, filename, account_id=None):
     """
     Salva uma lista de dicionários em um arquivo CSV.
@@ -591,6 +182,25 @@ def save_inventory_to_csv(inventory, filename, account_id=None):
     except Exception as e:
         logging.error(f"Erro ao salvar inventário em CSV: {e}")
 
+def save_permissions_to_csv(allowed_services, filename="allowed_services.csv", account_id=None):
+    """
+    Salva a lista de serviços permitidos em um arquivo CSV.
+    """
+    if not allowed_services:
+        logging.warning(f"Nenhum serviço permitido para salvar em {filename}.")
+        return
+    if account_id:
+        filename = f"{account_id}_{filename}"
+    try:
+        with open(filename, mode='w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(["AllowedService"])
+            for svc in allowed_services:
+                writer.writerow([svc])
+        logging.info(f"Permissões salvas em {filename}")
+    except Exception as e:
+        logging.error(f"Erro ao salvar permissões em CSV: {e}")
+
 def print_inventory(inventory, title):
     logging.info(f"\n{title}:")
     if not inventory:
@@ -604,6 +214,10 @@ def main():
     sts = boto3.client('sts')
     account_id = sts.get_caller_identity()["Account"]
 
+    logging.info("Verificando permissões da credencial fornecida...")
+    allowed_services = get_allowed_services()
+    save_permissions_to_csv(allowed_services, "allowed_services.csv", account_id)
+
     logging.info("Getting EC2 instances inventory...")
     ec2_inventory = get_ec2_inventory()
     print_inventory(ec2_inventory, "EC2 Instances Inventory")
@@ -614,15 +228,15 @@ def main():
     print_inventory(rds_inventory, "RDS Instances Inventory")
     save_inventory_to_csv(rds_inventory, "rds_inventory.csv", account_id)
 
-    logging.info("Getting S3 buckets inventory...")
-    s3_inventory = get_s3_inventory()
-    print_inventory(s3_inventory, "S3 Buckets Inventory")
-    save_inventory_to_csv(s3_inventory, "s3_inventory.csv", account_id)
-
     logging.info("Getting Lambda functions inventory...")
     lambda_inventory = get_lambda_inventory()
     print_inventory(lambda_inventory, "Lambda Functions Inventory")
     save_inventory_to_csv(lambda_inventory, "lambda_inventory.csv", account_id)
+
+    logging.info("Getting S3 inventory...")
+    s3_inventory = get_s3_inventory()
+    print_inventory(s3_inventory, "S3 Inventory")
+    save_inventory_to_csv(s3_inventory, "s3_inventory.csv", account_id)
 
     logging.info("Getting EKS clusters inventory...")
     eks_inventory = get_eks_inventory()
@@ -1390,5 +1004,471 @@ def get_servicecatalog_inventory():
         logging.error(f"Error retrieving Service Catalog products: {e}")
     return products
 
+def get_lambda_inventory():
+    lambda_client = boto3.client('lambda')
+    account_id, region = get_account_and_region(lambda_client)
+    lambda_functions = []
+    try:
+        paginator = lambda_client.get_paginator('list_functions')
+        for page in paginator.paginate():
+            for function in page["Functions"]:
+                lambda_function_info = {
+                    "FunctionName": function["FunctionName"],
+                    "Runtime": function.get("Runtime", "N/A"),
+                    "LastModified": function["LastModified"],
+                    "CodeSize": function["CodeSize"],
+                    "AccountId": account_id,
+                    "Region": region
+                }
+                lambda_functions.append(lambda_function_info)
+    except ClientError as e:
+        logging.error(f"Error retrieving Lambda functions: {e}")
+    return lambda_functions
+
+def get_eks_inventory():
+    eks = boto3.client('eks')
+    account_id, region = get_account_and_region(eks)
+    eks_clusters = []
+    try:
+        clusters_response = eks.list_clusters()
+        for cluster_name in clusters_response.get("clusters", []):
+            try:
+                cluster_info = eks.describe_cluster(name=cluster_name)["cluster"]
+                eks_cluster_info = {
+                    "Name": cluster_info["name"],
+                    "Status": cluster_info["status"],
+                    "Version": cluster_info["version"],
+                    "Endpoint": cluster_info["endpoint"],
+                    "CreatedAt": cluster_info["createdAt"].strftime("%Y-%m-%d %H:%M:%S"),
+                    "AccountId": account_id,
+                    "Region": region
+                }
+                eks_clusters.append(eks_cluster_info)
+            except ClientError as e:
+                logging.error(f"Error describing EKS cluster {cluster_name}: {e}")
+    except ClientError as e:
+        logging.error(f"Error retrieving EKS clusters: {e}")
+    return eks_clusters
+
+def get_spot_instance_requests():
+    ec2 = boto3.client('ec2')
+    account_id, region = get_account_and_region(ec2)
+    spot_requests = []
+    try:
+        paginator = ec2.get_paginator('describe_spot_instance_requests')
+        for page in paginator.paginate():
+            for req in page.get("SpotInstanceRequests", []):
+                allocated_storage_gib = "N/A"
+                launch_spec = req.get("LaunchSpecification", {})
+                block_devices = launch_spec.get("BlockDeviceMappings", [])
+                if block_devices and isinstance(block_devices, list):
+                    ebs = block_devices[0].get("Ebs", {}) if block_devices else {}
+                    allocated_storage_gib = ebs.get("VolumeSize", "N/A")
+                os_name = "N/A"
+                image_id = launch_spec.get("ImageId")
+                if image_id:
+                    try:
+                        images = ec2.describe_images(ImageIds=[image_id]).get("Images", [])
+                        if images:
+                            os_name = images[0].get("PlatformDetails", images[0].get("Description", "N/A"))
+                    except Exception as e:
+                        logging.warning(f"Could not get OS for Spot request {req['SpotInstanceRequestId']}: {e}")
+                spot_info = {
+                    "SpotInstanceRequestId": req["SpotInstanceRequestId"],
+                    "State": req["State"],
+                    "StatusCode": req["Status"]["Code"],
+                    "StatusMessage": req["Status"].get("Message", ""),
+                    "InstanceId": req.get("InstanceId", "N/A"),
+                    "LaunchSpecification": launch_spec,
+                    "AllocatedStorageGiB": allocated_storage_gib,
+                    "OS": os_name,
+                    "CreateTime": req["CreateTime"].strftime("%Y-%m-%d %H:%M:%S"),
+                    "AccountId": account_id,
+                    "Region": region
+                }
+                spot_requests.append(spot_info)
+    except ClientError as e:
+        logging.error(f"Error retrieving Spot Instance Requests: {e}")
+    return spot_requests
+
+def get_iam_users():
+    iam = boto3.client('iam')
+    account_id, region = get_account_and_region(iam)
+    users = []
+    try:
+        paginator = iam.get_paginator('list_users')
+        for page in paginator.paginate():
+            for user in page.get("Users", []):
+                user_info = {
+                    "UserName": user["UserName"],
+                    "UserId": user["UserId"],
+                    "CreateDate": user["CreateDate"].strftime("%Y-%m-%d %H:%M:%S"),
+                    "Arn": user["Arn"],
+                    "AccountId": account_id,
+                    "Region": region
+                }
+                users.append(user_info)
+    except ClientError as e:
+        logging.error(f"Error retrieving IAM users: {e}")
+    return users
+
+def get_iam_roles():
+    iam = boto3.client('iam')
+    account_id, region = get_account_and_region(iam)
+    roles = []
+    try:
+        paginator = iam.get_paginator('list_roles')
+        for page in paginator.paginate():
+            for role in page.get("Roles", []):
+                role_info = {
+                    "RoleName": role["RoleName"],
+                    "RoleId": role["RoleId"],
+                    "CreateDate": role["CreateDate"].strftime("%Y-%m-%d %H:%M:%S"),
+                    "Arn": role["Arn"],
+                    "AccountId": account_id,
+                    "Region": region
+                }
+                roles.append(role_info)
+    except ClientError as e:
+        logging.error(f"Error retrieving IAM roles: {e}")
+    return roles
+
+def get_cloudfront_distributions():
+    cf = boto3.client('cloudfront')
+    account_id, region = get_account_and_region(cf)
+    distributions = []
+    try:
+        paginator = cf.get_paginator('list_distributions')
+        for page in paginator.paginate():
+            for dist in page.get("DistributionList", {}).get("Items", []):
+                dist_info = {
+                    "Id": dist["Id"],
+                    "DomainName": dist["DomainName"],
+                    "Status": dist["Status"],
+                    "LastModifiedTime": dist["LastModifiedTime"].strftime("%Y-%m-%d %H:%M:%S"),
+                    "AccountId": account_id,
+                    "Region": region
+                }
+                distributions.append(dist_info)
+    except ClientError as e:
+        logging.error(f"Error retrieving CloudFront distributions: {e}")
+    return distributions
+
+def get_dynamodb_tables():
+    dynamodb = boto3.client('dynamodb')
+    account_id, region = get_account_and_region(dynamodb)
+    tables = []
+    try:
+        paginator = dynamodb.get_paginator('list_tables')
+        for page in paginator.paginate():
+            for table_name in page.get("TableNames", []):
+                try:
+                    desc = dynamodb.describe_table(TableName=table_name)["Table"]
+                    table_info = {
+                        "TableName": desc["TableName"],
+                        "TableStatus": desc["TableStatus"],
+                        "ItemCount": desc.get("ItemCount", 0),
+                        "CreationDateTime": desc["CreationDateTime"].strftime("%Y-%m-%d %H:%M:%S"),
+                        "AccountId": account_id,
+                        "Region": region
+                    }
+                    tables.append(table_info)
+                except ClientError as e:
+                    logging.error(f"Error describing DynamoDB table {table_name}: {e}")
+    except ClientError as e:
+        logging.error(f"Error retrieving DynamoDB tables: {e}")
+    return tables
+
+def get_elbv2_load_balancers():
+    elbv2 = boto3.client('elbv2')
+    account_id, region = get_account_and_region(elbv2)
+    lbs = []
+    try:
+        paginator = elbv2.get_paginator('describe_load_balancers')
+        for page in paginator.paginate():
+            for lb in page.get("LoadBalancers", []):
+                lb_info = {
+                    "LoadBalancerName": lb["LoadBalancerName"],
+                    "DNSName": lb["DNSName"],
+                    "Type": lb["Type"],
+                    "State": lb["State"]["Code"],
+                    "CreatedTime": lb["CreatedTime"].strftime("%Y-%m-%d %H:%M:%S"),
+                    "AccountId": account_id,
+                    "Region": region
+                }
+                lbs.append(lb_info)
+    except ClientError as e:
+        logging.error(f"Error retrieving ELBv2 load balancers: {e}")
+    return lbs
+
+def get_sns_topics():
+    sns = boto3.client('sns')
+    account_id, region = get_account_and_region(sns)
+    topics = []
+    try:
+        paginator = sns.get_paginator('list_topics')
+        for page in paginator.paginate():
+            for topic in page.get("Topics", []):
+                topics.append({
+                    "TopicArn": topic["TopicArn"],
+                    "AccountId": account_id,
+                    "Region": region
+                })
+    except ClientError as e:
+        logging.error(f"Error retrieving SNS topics: {e}")
+    return topics
+
+def get_sqs_queues():
+    sqs = boto3.client('sqs')
+    account_id, region = get_account_and_region(sqs)
+    queues = []
+    try:
+        response = sqs.list_queues()
+        for url in response.get("QueueUrls", []):
+            queues.append({
+                "QueueUrl": url,
+                "AccountId": account_id,
+                "Region": region
+            })
+    except ClientError as e:
+        logging.error(f"Error retrieving SQS queues: {e}")
+    return queues
+
+def get_cloudformation_stacks():
+    cfn = boto3.client('cloudformation')
+    account_id, region = get_account_and_region(cfn)
+    stacks = []
+    try:
+        paginator = cfn.get_paginator('describe_stacks')
+        for page in paginator.paginate():
+            for stack in page.get("Stacks", []):
+                stack_info = {
+                    "StackName": stack["StackName"],
+                    "StackStatus": stack["StackStatus"],
+                    "CreationTime": stack["CreationTime"].strftime("%Y-%m-%d %H:%M:%S"),
+                    "AccountId": account_id,
+                    "Region": region
+                }
+                stacks.append(stack_info)
+    except ClientError as e:
+        logging.error(f"Error retrieving CloudFormation stacks: {e}")
+    return stacks
+
+def get_ecr_repositories():
+    ecr = boto3.client('ecr')
+    account_id, region = get_account_and_region(ecr)
+    repos = []
+    try:
+        paginator = ecr.get_paginator('describe_repositories')
+        for page in paginator.paginate():
+            for repo in page.get("repositories", []):
+                repo_info = {
+                    "RepositoryName": repo["repositoryName"],
+                    "RepositoryUri": repo["repositoryUri"],
+                    "CreatedAt": repo["createdAt"].strftime("%Y-%m-%d %H:%M:%S"),
+                    "RegistryId": repo["registryId"],
+                    "AccountId": account_id,
+                    "Region": region
+                }
+                repos.append(repo_info)
+    except ClientError as e:
+        logging.error(f"Error retrieving ECR repositories: {e}")
+    return repos
+
+def get_docdb_clusters():
+    docdb = boto3.client('docdb')
+    account_id, region = get_account_and_region(docdb)
+    clusters = []
+    try:
+        paginator = docdb.get_paginator('describe_db_clusters')
+        for page in paginator.paginate():
+            for cluster in page.get("DBClusters", []):
+                cluster_info = {
+                    "DBClusterIdentifier": cluster["DBClusterIdentifier"],
+                    "Status": cluster["Status"],
+                    "Engine": cluster["Engine"],
+                    "EngineVersion": cluster["EngineVersion"],
+                    "Endpoint": cluster.get("Endpoint", "N/A"),
+                    "ClusterCreateTime": cluster["ClusterCreateTime"].strftime("%Y-%m-%d %H:%M:%S"),
+                    "AccountId": account_id,
+                    "Region": region
+                }
+                clusters.append(cluster_info)
+    except ClientError as e:
+        logging.error(f"Error retrieving DocumentDB clusters: {e}")
+    return clusters
+
+def get_redshift_clusters():
+    redshift = boto3.client('redshift')
+    account_id, region = get_account_and_region(redshift)
+    clusters = []
+    try:
+        paginator = redshift.get_paginator('describe_clusters')
+        for page in paginator.paginate():
+            for cluster in page.get("Clusters", []):
+                cluster_info = {
+                    "ClusterIdentifier": cluster["ClusterIdentifier"],
+                    "NodeType": cluster["NodeType"],
+                    "ClusterStatus": cluster["ClusterStatus"],
+                    "ClusterCreateTime": cluster["ClusterCreateTime"].strftime("%Y-%m-%d %H:%M:%S"),
+                    "Endpoint": cluster.get("Endpoint", {}).get("Address", "N/A"),
+                    "AccountId": account_id,
+                    "Region": region
+                }
+                clusters.append(cluster_info)
+    except ClientError as e:
+        logging.error(f"Error retrieving Redshift clusters: {e}")
+    return clusters
+
+def get_elasticache_clusters():
+    elasticache = boto3.client('elasticache')
+    account_id, region = get_account_and_region(elasticache)
+    clusters = []
+    try:
+        paginator = elasticache.get_paginator('describe_cache_clusters')
+        for page in paginator.paginate(ShowCacheNodeInfo=True):
+            for cluster in page.get("CacheClusters", []):
+                cluster_info = {
+                    "CacheClusterId": cluster["CacheClusterId"],
+                    "Engine": cluster["Engine"],
+                    "EngineVersion": cluster["EngineVersion"],
+                    "CacheClusterStatus": cluster["CacheClusterStatus"],
+                    "NumCacheNodes": cluster["NumCacheNodes"],
+                    "CacheNodeType": cluster["CacheNodeType"],
+                    "CacheClusterCreateTime": cluster["CacheClusterCreateTime"].strftime("%Y-%m-%d %H:%M:%S"),
+                    "AccountId": account_id,
+                    "Region": region
+                }
+                clusters.append(cluster_info)
+    except ClientError as e:
+        logging.error(f"Error retrieving ElastiCache clusters: {e}")
+    return clusters
+
+def get_efs_file_systems():
+    efs = boto3.client('efs')
+    account_id, region = get_account_and_region(efs)
+    filesystems = []
+    try:
+        response = efs.describe_file_systems()
+        for fs in response.get("FileSystems", []):
+            fs_info = {
+                "FileSystemId": fs["FileSystemId"],
+                "CreationTime": fs["CreationTime"].strftime("%Y-%m-%d %H:%M:%S"),
+                "LifeCycleState": fs["LifeCycleState"],
+                "NumberOfMountTargets": fs["NumberOfMountTargets"],
+                "SizeInBytes": fs["SizeInBytes"]["Value"],
+                "AccountId": account_id,
+                "Region": region
+            }
+            filesystems.append(fs_info)
+    except ClientError as e:
+        logging.error(f"Error retrieving EFS file systems: {e}")
+    return filesystems
+
+def get_fsx_file_systems():
+    fsx = boto3.client('fsx')
+    account_id, region = get_account_and_region(fsx)
+    filesystems = []
+    try:
+        paginator = fsx.get_paginator('describe_file_systems')
+        for page in paginator.paginate():
+            for fs in page.get("FileSystems", []):
+                fs_info = {
+                    "FileSystemId": fs["FileSystemId"],
+                    "FileSystemType": fs["FileSystemType"],
+                    "Lifecycle": fs["Lifecycle"],
+                    "CreationTime": fs["CreationTime"].strftime("%Y-%m-%d %H:%M:%S"),
+                    "StorageCapacity": fs["StorageCapacity"],
+                    "AccountId": account_id,
+                    "Region": region
+                }
+                filesystems.append(fs_info)
+    except ClientError as e:
+        logging.error(f"Error retrieving FSx file systems: {e}")
+    return filesystems
+
+def get_glacier_vaults():
+    glacier = boto3.client('glacier')
+    account_id, region = get_account_and_region(glacier)
+    vaults = []
+    try:
+        paginator = glacier.get_paginator('list_vaults')
+        for page in paginator.paginate():
+            for vault in page.get("VaultList", []):
+                vault_info = {
+                    "VaultName": vault["VaultName"],
+                    "CreationDate": vault["CreationDate"],
+                    "NumberOfArchives": vault.get("NumberOfArchives", 0),
+                    "SizeInBytes": vault.get("SizeInBytes", 0),
+                    "AccountId": account_id,
+                    "Region": region
+                }
+                vaults.append(vault_info)
+    except ClientError as e:
+        logging.error(f"Error retrieving Glacier vaults: {e}")
+    return vaults
+
+def get_backup_vaults():
+    backup = boto3.client('backup')
+    account_id, region = get_account_and_region(backup)
+    vaults = []
+    try:
+        paginator = backup.get_paginator('list_backup_vaults')
+        for page in paginator.paginate():
+            for vault in page.get("BackupVaultList", []):
+                total_size_bytes = 0
+                try:
+                    rp_paginator = backup.get_paginator('list_recovery_points_by_backup_vault')
+                    for rp_page in rp_paginator.paginate(BackupVaultName=vault["BackupVaultName"]):
+                        for rp in rp_page.get("RecoveryPoints", []):
+                            total_size_bytes += rp.get("BackupSizeInBytes", 0)
+                except Exception as e:
+                    logging.warning(f"Could not get size for backup vault {vault['BackupVaultName']}: {e}")
+                vault_info = {
+                    "BackupVaultName": vault["BackupVaultName"],
+                    "CreationDate": vault["CreationDate"].strftime("%Y-%m-%d %H:%M:%S"),
+                    "NumberOfRecoveryPoints": vault.get("NumberOfRecoveryPoints", 0),
+                    "TotalBackupSizeBytes": total_size_bytes,
+                    "Arn": vault["BackupVaultArn"],
+                    "AccountId": account_id,
+                    "Region": region
+                }
+                vaults.append(vault_info)
+    except ClientError as e:
+        logging.error(f"Error retrieving AWS Backup vaults: {e}")
+    return vaults
+
+def get_ebs_volumes():
+    ec2 = boto3.client('ec2')
+    account_id, region = get_account_and_region(ec2)
+    volumes = []
+    try:
+        paginator = ec2.get_paginator('describe_volumes')
+        for page in paginator.paginate():
+            for vol in page.get("Volumes", []):
+                vol_info = {
+                    "VolumeId": vol["VolumeId"],
+                    "SizeGiB": vol["Size"],
+                    "State": vol["State"],
+                    "VolumeType": vol["VolumeType"],
+                    "CreateTime": vol["CreateTime"].strftime("%Y-%m-%d %H:%M:%S"),
+                    "AvailabilityZone": vol["AvailabilityZone"],
+                    "Encrypted": vol["Encrypted"],
+                    "Attachments": [
+                        {
+                            "InstanceId": att.get("InstanceId", "N/A"),
+                            "State": att.get("State", "N/A")
+                        } for att in vol.get("Attachments", [])
+                    ],
+                    "AccountId": account_id,
+                    "Region": region
+                }
+                volumes.append(vol_info)
+    except ClientError as e:
+        logging.error(f"Error retrieving EBS volumes: {e}")
+    return volumes
+
 if __name__ == "__main__":
+    import sys
+    logging.info("Iniciando execução do inventário AWS...")
     main()
