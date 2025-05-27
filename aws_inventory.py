@@ -2,6 +2,8 @@ import boto3
 import logging
 from botocore.exceptions import ClientError
 import csv
+import os
+import time
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
@@ -12,8 +14,17 @@ def get_account_and_region(client):
     return account_id, region
 
 def get_ec2_inventory():
-    ec2 = boto3.client('ec2')
+    # Prioriza a variável de ambiente AWS_REGION definida na sessão
+    region_name = (
+        os.environ.get("AWS_REGION") or
+        os.environ.get("AWS_DEFAULT_REGION") or
+        boto3.session.Session().region_name or
+        'us-east-1'
+    )
+    logging.info(f"Região utilizada para EC2: {region_name}")
+    ec2 = boto3.client('ec2', region_name=region_name)
     account_id, region = get_account_and_region(ec2)
+    logging.info(f"Coletando EC2 para Account: {account_id} | Região: {region}")
     instances = []
     try:
         paginator = ec2.get_paginator('describe_instances')
@@ -44,6 +55,7 @@ def get_ec2_inventory():
                         "Region": region
                     }
                     instances.append(instance_info)
+        logging.info(f"Total de instâncias EC2 encontradas: {len(instances)}")
     except ClientError as e:
         logging.error(f"Error retrieving EC2 instances: {e}")
     except Exception as e:
@@ -127,9 +139,13 @@ def get_allowed_services():
         try:
             func()
             allowed.append(svc)
+            logging.debug(f"Permissão OK para {svc}")
         except Exception as e:
             logging.debug(f"Sem permissão para {svc}: {e}")
-    logging.info(f"Serviços permitidos para a credencial: {allowed}")
+    if not allowed:
+        logging.warning("Nenhum serviço permitido foi identificado para a credencial atual.")
+    else:
+        logging.info(f"Serviços permitidos para a credencial: {allowed}")
     return allowed
 
 def get_s3_inventory():
@@ -139,18 +155,39 @@ def get_s3_inventory():
     s3 = boto3.client('s3', config=s3_config)
     account_id, region = get_account_and_region(s3)
     s3_buckets = []
+    timeout_seconds = 3620
+    start_time = time.time()
+    skip_size = False
+    max_objects_per_bucket = 10000000  # Limite para acelerar (ajuste conforme necessário)
     try:
+
         response = s3.list_buckets()
         for bucket in response["Buckets"]:
             bucket_name = bucket["Name"]
             total_size = 0
-            try:
-                paginator = s3.get_paginator('list_objects_v2')
-                for page in paginator.paginate(Bucket=bucket_name):
-                    for obj in page.get("Contents", []):
-                        total_size += obj.get("Size", 0)
-            except Exception as e:
-                logging.warning(f"Could not get size for bucket {bucket_name}: {e}")
+            object_count = 0
+            if not skip_size:
+                try:
+                    paginator = s3.get_paginator('list_objects_v2')
+                    for page in paginator.paginate(Bucket=bucket_name):
+                        for obj in page.get("Contents", []):
+                            total_size += obj.get("Size", 0)
+                            object_count += 1
+                            if object_count >= max_objects_per_bucket:
+                                logging.warning(f"Limite de {max_objects_per_bucket} objetos atingido para bucket {bucket_name}. O tamanho é apenas uma estimativa.")
+                                skip_size = True
+                                break
+                        if skip_size:
+                            break
+                        # Checa timeout a cada página
+                        if time.time() - start_time > timeout_seconds:
+                            logging.warning("Tempo limite atingido para coleta do tamanho dos buckets S3. Os próximos buckets não terão TotalSizeBytes calculado.")
+                            skip_size = True
+                            break
+                except Exception as e:
+                    logging.warning(f"Could not get size for bucket {bucket_name}: {e}")
+            if skip_size:
+                total_size = "N/A"
             s3_bucket_info = {
                 "Name": bucket_name,
                 "CreationDate": bucket["CreationDate"].strftime("%Y-%m-%d %H:%M:%S"),
@@ -186,9 +223,6 @@ def save_permissions_to_csv(allowed_services, filename="allowed_services.csv", a
     """
     Salva a lista de serviços permitidos em um arquivo CSV.
     """
-    if not allowed_services:
-        logging.warning(f"Nenhum serviço permitido para salvar em {filename}.")
-        return
     if account_id:
         filename = f"{account_id}_{filename}"
     try:
