@@ -49,5 +49,8 @@ for produto in produtos:
     if lista_df:
         df_concatenado = pd.concat(lista_df, ignore_index=True, sort=True)
         nome_saida = f"{produto}.csv"
+        # Preenche valores ausentes de TotalSizeBytes com zero apenas para s3
+        if produto == "s3" and "TotalSizeBytes" in df_concatenado.columns:
+            df_concatenado["TotalSizeBytes"] = df_concatenado["TotalSizeBytes"].fillna(0)
         df_concatenado.to_csv(nome_saida, index=False)
         print(f"Arquivo unificado salvo como '{nome_saida}' com {len(df_concatenado)} linhas.")
