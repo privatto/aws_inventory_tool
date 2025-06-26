@@ -1,10 +1,39 @@
 # AWS Inventory Script
 
-This Python script collects inventory information for various AWS resources, including:
+This Python script collects inventory information for various AWS resources and generates visual analysis (charts) for each resource type. It now includes **automatic generation of bar charts for S3, Route53 Records, and Route53 Zones**, as well as other improvements.
+
+## 🆕 New Features
+
+- **Automatic chart generation for S3 buckets:**
+  - Bar chart for bucket count by region
+  - Bar chart for bucket size distribution (GB)
+  - Bar chart for buckets with size zero
+  - Prints total storage and bucket statistics
+
+- **Automatic chart generation for Route53 Records:**
+  - Bar chart for top 20 record names
+  - Bar chart for record count by TTL
+  - Bar chart for record count by type
+  - Prints total records, duplicate names, and unique types
+
+- **Automatic chart generation for Route53 Zones:**
+  - Bar chart for zone count by region
+  - Bar chart for top 20 zone names
+  - Bar chart for zone count by Id
+  - Bar chart for zone count by PrivateZone (True/False)
+  - Bar chart for top 20 ResourceRecordSetCount
+  - Prints total zones and duplicate names
+
+- **Each AWS product is identified by filename and processed with its own logic.**
+- **Bloco genérico**: For all other products, generates pie charts for relevant columns.
+
+---
+
+## Supported AWS Resources
 
 - EC2 Instances
 - RDS Instances
-- S3 Buckets
+- S3 Buckets (with special charts)
 - Lambda Functions
 - EKS Clusters
 - Spot Instance Requests
@@ -29,8 +58,8 @@ This Python script collects inventory information for various AWS resources, inc
 - EC2 Security Groups
 - EC2 Key Pairs
 - ACM Certificates
-- Route53 Hosted Zones
-- Route53 Records
+- Route53 Hosted Zones (with special charts)
+- Route53 Records (with special charts)
 - Elastic Beanstalk Environments
 - Elastic IPs
 - KMS Keys
@@ -61,8 +90,6 @@ This Python script collects inventory information for various AWS resources, inc
 - Resource Groups
 - Resource Tag Editor
 
-The script retrieves and prints the details of these resources in the AWS account using the `boto3` library.
-
 ---
 
 ## 🚀 Features
@@ -72,7 +99,8 @@ The script retrieves and prints the details of these resources in the AWS accoun
 - Includes error handling and logging for robust performance.
 - Modular design for easy customization and extension.
 - Saves each resource inventory to a CSV file, prefixed with the AWS account ID.
-- **NEW:** Includes a merge utility (`merge.py`) to unificar/concatenate CSV files by AWS product.
+- **NEW:** Includes a merge utility (`merge.py`) to unify/concatenate CSV files by AWS product.
+- **NEW:** Generates charts for S3, Route53 Records, and Route53 Zones automatically.
 
 ---
 
@@ -94,11 +122,23 @@ After running, you will find one CSV file for each AWS product with all the data
 
 ---
 
+## 📊 Chart Generation
+
+After running the inventory and merge scripts, run the analysis script to generate charts:
+
+```bash
+python inventory_analysis.py
+```
+Charts will be saved in the `graficos` directory. Special charts are generated for S3, Route53 Records, and Route53 Zones. For other products, pie charts are generated for relevant columns.
+
+---
+
 ## 🛠 Requirements
 
 - Python 3.7+
 - AWS CLI configured with appropriate permissions
 - `boto3` library
+- `matplotlib` and `pandas` libraries
 
 ---
 
@@ -114,7 +154,7 @@ After running, you will find one CSV file for each AWS product with all the data
 2. Install dependencies:
 
    ```bash
-   pip install boto3
+   pip install boto3 matplotlib pandas
    ```
 
 3. Configure AWS credentials: Ensure you have configured the AWS CLI with valid credentials or set up the required environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`).
@@ -129,13 +169,25 @@ After running, you will find one CSV file for each AWS product with all the data
 
 ## 🏃‍♂️ Usage
 
-Run the script using:
+Run the inventory script:
 
 ```bash
 python aws_inventory.py
 ```
 
-The script will output the inventory for each service in the console and save a CSV file for each resource.
+Merge CSVs:
+
+```bash
+python merge.py
+```
+
+Generate charts:
+
+```bash
+python inventory_analysis.py
+```
+
+The script will output the inventory for each service in the console and save a CSV file and charts for each resource.
 
 ---
 
